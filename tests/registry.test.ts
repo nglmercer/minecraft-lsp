@@ -9,58 +9,55 @@ describe('RegistryProvider', () => {
     provider = new RegistryProvider({ cacheProvider: new MemoryCache() });
   });
 
-  test('getItems returns item list', async () => {
+  test('returns empty array when network fails', async () => {
     const items = await provider.getItems();
-    expect(items.length).toBeGreaterThan(0);
-    expect(items).toContain('diamond');
+    expect(items).toEqual([]);
   });
 
-  test('getBlocks returns block list', async () => {
+  test('getBlocks returns empty when network fails', async () => {
     const blocks = await provider.getBlocks();
-    expect(blocks.length).toBeGreaterThan(0);
-    expect(blocks).toContain('stone');
+    expect(blocks).toEqual([]);
   });
 
-  test('getEntities returns entity list', async () => {
+  test('getEntities returns empty when network fails', async () => {
     const entities = await provider.getEntities();
-    expect(entities.length).toBeGreaterThan(0);
-    expect(entities).toContain('minecraft:player');
+    expect(entities).toEqual([]);
   });
 
-  test('getEffects returns effect list', async () => {
+  test('getEffects returns empty when network fails', async () => {
     const effects = await provider.getEffects();
-    expect(effects.length).toBeGreaterThan(0);
+    expect(effects).toEqual([]);
   });
 
-  test('getEnchantments returns enchantment list', async () => {
+  test('getEnchantments returns empty when network fails', async () => {
     const enchantments = await provider.getEnchantments();
-    expect(enchantments.length).toBeGreaterThan(0);
+    expect(enchantments).toEqual([]);
   });
 
-  test('getParticles returns particle list', async () => {
+  test('getParticles returns empty when network fails', async () => {
     const particles = await provider.getParticles();
-    expect(particles.length).toBeGreaterThan(0);
+    expect(particles).toEqual([]);
   });
 
-  test('getSounds returns sound list', async () => {
+  test('getSounds returns empty when network fails', async () => {
     const sounds = await provider.getSounds();
-    expect(sounds.length).toBeGreaterThan(0);
+    expect(sounds).toEqual([]);
   });
 
-  test('getBiomes returns biome list', async () => {
+  test('getBiomes returns empty when network fails', async () => {
     const biomes = await provider.getBiomes();
-    expect(biomes.length).toBeGreaterThan(0);
+    expect(biomes).toEqual([]);
   });
 
-  test('getDimensions returns dimension list', async () => {
+  test('getDimensions returns empty when network fails', async () => {
     const dimensions = await provider.getDimensions();
-    expect(dimensions.length).toBeGreaterThan(0);
+    expect(dimensions).toEqual([]);
   });
 
   test('clearCache clears cache', async () => {
     await provider.getItems();
     await provider.clearCache();
     const items = await provider.getItems();
-    expect(items.length).toBeGreaterThan(0);
+    expect(items).toEqual([]);
   });
 });

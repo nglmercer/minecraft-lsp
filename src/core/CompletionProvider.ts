@@ -83,7 +83,7 @@ interface ParsedCommand {
   name: string;
   description: string;
   node: CommandNode;
-  path: string[];
+  path?: string[];
 }
 
 const PARSER_REGISTRIES: Record<string, string> = {
@@ -163,7 +163,7 @@ export class CompletionProvider {
     
     const commandName = parts[0];
     
-    if (!commands.has(commandName)) {
+    if (!commands.has(commandName!)) {
       if (parts.length === 1 && commandName) {
         return this.findMatchingCommands(commands, parts, commandName);
       }
@@ -175,11 +175,12 @@ export class CompletionProvider {
       return subcommands;
     }
     
-    const commandNode = commands.get(commandName)!.node;
+    const commandNode = commands.get(commandName!)!.node;
     let lastPartComplete = false;
     
     for (let i = 1; i < parts.length; i++) {
       const part = parts[i];
+      if (!part) continue;
       const child = commandNode.children?.[part];
       if (child?.type === 'literal') {
         lastPartComplete = true;
@@ -216,8 +217,8 @@ export class CompletionProvider {
     let currentNode: CommandNode | undefined;
     let commandName = parts[0];
     
-    if (commands.has(commandName)) {
-      currentNode = commands.get(commandName)!.node;
+    if (commands.has(commandName!)) {
+      currentNode = commands.get(commandName!)!.node;
       
       for (let i = 1; i < parts.length && currentNode; i++) {
         const part = parts[i];
