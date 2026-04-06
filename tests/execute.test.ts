@@ -110,3 +110,69 @@ describe('CompletionProvider - Array Commands', () => {
     expect(completions.length).toBeGreaterThan(0);
   });
 });
+
+describe('CompletionProvider - Execute Redirect', () => {
+  let provider: CompletionProvider;
+
+  beforeEach(() => {
+    provider = new CompletionProvider({ cacheProvider: new MemoryCache() });
+  });
+
+  test('returns top-level commands after execute run', async () => {
+    const context: CompletionContext = {
+      line: 0,
+      character: 13,
+      text: '/execute run ',
+      lineText: '/execute run ',
+    };
+    const completions = await provider.getCompletions(context);
+    expect(completions.length).toBeGreaterThan(0);
+    const labels = completions.map(c => c.label);
+    expect(labels).toContain('give');
+    expect(labels).toContain('tp');
+    expect(labels.every(l => !l.startsWith('/'))).toBe(true);
+  });
+
+  test('returns top-level commands after execute at @p run ', async () => {
+    const context: CompletionContext = {
+      line: 0,
+      character: 19,
+      text: '/execute at @p run ',
+      lineText: '/execute at @p run ',
+    };
+    const completions = await provider.getCompletions(context);
+    expect(completions.length).toBeGreaterThan(0);
+    const labels = completions.map(c => c.label);
+    expect(labels).toContain('give');
+    expect(labels).toContain('tp');
+    expect(labels.every(l => !l.startsWith('/'))).toBe(true);
+  });
+
+  test('filters top-level commands after execute run with prefix', async () => {
+    const context: CompletionContext = {
+      line: 0,
+      character: 15,
+      text: '/execute run gi',
+      lineText: '/execute run gi',
+    };
+    const completions = await provider.getCompletions(context);
+    expect(completions.length).toBeGreaterThan(0);
+    const labels = completions.map(c => c.label);
+    expect(labels).toContain('give');
+    expect(labels).not.toContain('tp');
+  });
+
+  test('returns entity completions after execute run summon ', async () => {
+    const context: CompletionContext = {
+      line: 0,
+      character: 20,
+      text: '/execute run summon ',
+      lineText: '/execute run summon ',
+    };
+    const completions = await provider.getCompletions(context);
+    expect(completions.length).toBeGreaterThan(0);
+    const labels = completions.map(c => c.label);
+    // Should contain entities like 'zombie', 'player', etc.
+    expect(labels).toContain('zombie');
+  });
+});

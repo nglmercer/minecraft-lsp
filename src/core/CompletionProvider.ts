@@ -251,26 +251,48 @@ export class CompletionProvider {
               break;
             }
           }
+          
+          // If no literal match, follow the first argument node found
+          if (!nextNode) {
+            for (const node of Object.values(currentNode.children)) {
+              if (node.type === 'argument') {
+                nextNode = node;
+                break;
+              }
+            }
+          }
         }
         
         if (nextNode) {
-          if (nextNode.redirect) {
+          if (nextNode.redirect || (nextNode.type === 'literal' && part === 'run')) {
             // Redirect! Reset root and currentNode to follow the redirect.
-            // If i+1 < currentIndex, we should look up the NEXT part as a command name in the global map.
-            const nextPart = parts[i + 1];
-            if (nextPart && commands.has(nextPart)) {
-                rootNode = commands.get(nextPart)!.node;
+            // Misode/mcmeta data uses an array for redirect paths, e.g., ["execute"] or [""]
+            const redirectTarget = nextNode.redirect?.[0];
+            
+            if (redirectTarget && redirectTarget !== "" && commands.has(redirectTarget)) {
+                const targetCmd = commands.get(redirectTarget)!;
+                rootNode = targetCmd.node;
                 currentNode = rootNode;
-                commandName = nextPart;
-                // Since we're jumping to index i+1, we increment i.
-                i++;
-            } else if (i === currentIndex - 1) {
-                // Return filtered top-level commands if we just hit a redirect at the end
-                return this.getTopLevelCommands(commands, true, currentPart);
+                commandName = redirectTarget;
+                // No i++ here, the next loop iteration will process parts[i+1] against this new root
             } else {
-                // If the next word isn't a command, break
-                currentNode = undefined;
-                break;
+                // Redirect to global root (top-level commands)
+                const nextPart = parts[i + 1];
+                if (nextPart && commands.has(nextPart)) {
+                    const targetCmd = commands.get(nextPart)!;
+                    rootNode = targetCmd.node;
+                    currentNode = rootNode;
+                    commandName = nextPart;
+                    // Since we're jumping to the next word as a command name, we skip it
+                    i++;
+                } else if (i === currentIndex - 1) {
+                    // We are at the end of the redirect, return all top-level commands
+                    return this.getTopLevelCommands(commands, true, currentPart);
+                } else {
+                    // Path broken
+                    currentNode = undefined;
+                    break;
+                }
             }
           } else {
             currentNode = nextNode;
