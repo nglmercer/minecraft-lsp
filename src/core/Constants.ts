@@ -96,6 +96,16 @@ export const PARSER_KINDS = {
   ENCHANTMENT: 'enchantment',
 };
 
+export const ENTITY_PARSERS = [
+  'entity',
+  'game_profile',
+  'mob',
+  'player',
+  'selector',
+  'score_holder',
+  'target',
+];
+
 export const COMMAND_DESCRIPTIONS: Record<string, string> = {
   'give': 'Give items to players',
   'take': 'Take items from players',

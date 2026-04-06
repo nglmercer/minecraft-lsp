@@ -8,7 +8,7 @@ import {
   type CommandNode, 
   type ParsedCommand 
 } from './Types';
-import { REGISTRIES, SELECTORS, COMMANDS, PARSER_SUGGESTIONS, PARSER_REGISTRIES, COMMAND_DESCRIPTIONS, PARSERS, BRIGADIE_PARSERS, PARSER_KINDS } from './Constants';
+import { REGISTRIES, SELECTORS, COMMANDS, PARSER_SUGGESTIONS, PARSER_REGISTRIES, COMMAND_DESCRIPTIONS, PARSERS, BRIGADIE_PARSERS, PARSER_KINDS, ENTITY_PARSERS } from './Constants';
 import { validateArgument } from './Utils';
 
 export interface CompletionOptions {
@@ -343,13 +343,7 @@ export class CompletionProvider {
     const parser = node.parser || 'unknown';
     const items: CompletionItem[] = [];
 
-    const isEntity = parser.includes('entity') || 
-                     parser.includes('game_profile') || 
-                     parser.includes('mob') || 
-                     parser.includes('player') || 
-                     parser.includes('selector') ||
-                     parser.includes('score_holder') ||
-                     parser.includes('target');
+    const isEntity = ENTITY_PARSERS.some(p => parser.includes(p));
     
     if (isEntity) {
       for (const selector of SELECTORS) {
