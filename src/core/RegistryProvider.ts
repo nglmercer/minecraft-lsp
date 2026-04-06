@@ -1,5 +1,6 @@
 import { type CacheProvider } from './Cache';
 import { DataFetcher } from './Fetcher';
+import { REGISTRIES } from './Constants';
 
 export interface RegistryEntry {
   name: string;
@@ -23,7 +24,7 @@ export class RegistryProvider {
   }
 
   async getItems(): Promise<string[]> {
-    return this.loadRegistry('item');
+    return this.loadRegistry(REGISTRIES.ITEM);
   }
 
   async getBlocks(): Promise<string[]> {
@@ -31,31 +32,31 @@ export class RegistryProvider {
   }
 
   async getEntities(): Promise<string[]> {
-    return this.loadRegistry('entity_type');
+    return this.loadRegistry(REGISTRIES.ENTITY_TYPE);
   }
 
   async getEffects(): Promise<string[]> {
-    return this.loadRegistry('potion');
+    return this.loadRegistry(REGISTRIES.POTION);
   }
 
   async getEnchantments(): Promise<string[]> {
-    return this.loadRegistry('enchantment');
+    return this.loadRegistry(REGISTRIES.ENCHANTMENT);
   }
 
   async getParticles(): Promise<string[]> {
-    return this.loadRegistry('particle_type');
+    return this.loadRegistry(REGISTRIES.PARTICLE_TYPE);
   }
 
   async getSounds(): Promise<string[]> {
-    return this.loadRegistry('sound_event');
+    return this.loadRegistry(REGISTRIES.SOUND_EVENT);
   }
 
   async getBiomes(): Promise<string[]> {
-    return this.loadRegistry('worldgen/biome');
+    return this.loadRegistry(REGISTRIES.BIOME);
   }
 
   async getDimensions(): Promise<string[]> {
-    return this.loadRegistry('dimension');
+    return this.loadRegistry(REGISTRIES.DIMENSION);
   }
 
   async getLootTables(): Promise<string[]> {

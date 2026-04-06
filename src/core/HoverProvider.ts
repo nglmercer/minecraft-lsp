@@ -1,44 +1,16 @@
 import { type CacheProvider } from './Cache';
 import { DataFetcher } from './Fetcher';
-
-export interface HoverContext {
-  text: string;
-  line: number;
-  character: number;
-}
-
-export interface HoverResult {
-  contents: MarkupContent[];
-  range?: {
-    start: { line: number; character: number };
-    end: { line: number; character: number };
-  };
-}
-
-export interface MarkupContent {
-  kind: 'markdown' | 'plaintext';
-  value: string;
-}
+import { 
+  type HoverContext, 
+  type HoverResult, 
+  NodeType, 
+  type CommandNode 
+} from './Types';
 
 export interface HoverOptions {
   cacheProvider?: CacheProvider;
   baseUrl?: string;
   version?: string;
-}
-
-interface CommandNode {
-  type: string;
-  children?: Record<string, CommandNode>;
-  executable?: boolean;
-  parser?: string;
-  properties?: Record<string, any>;
-  permissions?: {
-    type: string;
-    permission?: {
-      type: string;
-      level?: string;
-    };
-  };
 }
 
 const COMMAND_DOCS: Record<string, string> = {
@@ -99,15 +71,15 @@ export class HoverProvider {
     }
     
     const commandName = parts[0];
-    const docs = COMMAND_DOCS[commandName] || COMMAND_DOCS['/' + commandName];
+    const docs = COMMAND_DOCS[commandName!] || COMMAND_DOCS['/' + commandName];
     
     if (docs) {
-      const startChar = text.indexOf(parts[parts.length - 1]);
+      const startChar = text.indexOf(parts[parts.length - 1]!);
       return {
         contents: [{ kind: 'markdown', value: docs }],
         range: {
           start: { line: context.line, character: startChar },
-          end: { line: context.line, character: startChar + parts[parts.length - 1].length },
+          end: { line: context.line, character: startChar + parts[parts.length - 1]!.length },
         },
       };
     }
@@ -125,7 +97,7 @@ export class HoverProvider {
       
       if (data?.children) {
         for (const [name, node] of Object.entries(data.children)) {
-          if (node.type === 'literal') {
+          if (node.type === NodeType.Literal) {
             this.commandTree.set(name, node);
           }
         }

@@ -1,6 +1,7 @@
 import { describe, expect, test, beforeEach } from 'bun:test';
 import { MemoryCache } from '../src/core/Cache';
-import { ValidationProvider, DiagnosticSeverity } from '../src/core/ValidationProvider';
+import { ValidationProvider } from '../src/core/ValidationProvider';
+import { DiagnosticSeverity } from '../src/core/Types';
 
 describe('ValidationProvider', () => {
   let provider: ValidationProvider;

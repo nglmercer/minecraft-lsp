@@ -1,146 +1,26 @@
 import { type CacheProvider } from './Cache';
 import { DataFetcher } from './Fetcher';
-
-export interface CompletionItem {
-  label: string;
-  kind?: CompletionKind;
-  detail?: string;
-  documentation?: string;
-  insertText?: string;
-  filterText?: string;
-  command?: string;
-  arguments?: CompletionArgument[];
-  range?: {
-    start: { line: number; character: number };
-    end: { line: number; character: number };
-  };
-}
-
-export interface CompletionArgument {
-  name: string;
-  parser: string;
-  properties?: Record<string, any>;
-}
-
-export enum CompletionKind {
-  Text = 1,
-  Method = 2,
-  Function = 3,
-  Constructor = 4,
-  Field = 5,
-  Variable = 6,
-  Class = 7,
-  Interface = 8,
-  Module = 9,
-  Property = 10,
-  Unit = 11,
-  Value = 12,
-  Enum = 13,
-  Keyword = 14,
-  Snippet = 15,
-  Color = 16,
-  File = 17,
-  Reference = 18,
-  Folder = 19,
-  EnumMember = 20,
-  Constant = 21,
-  Struct = 22,
-  Event = 23,
-  Operator = 24,
-  TypeParameter = 25,
-}
-
-export interface CompletionContext {
-  line: number;
-  character: number;
-  text: string;
-  lineText: string;
-  triggerCharacter?: string;
-}
-
-export enum NodeType {
-  Literal = 'literal',
-  Argument = 'argument',
-}
-
-const COMMANDS = {
-  RUN: 'run',
-  EXECUTE: 'execute',
-};
-
-const SELECTORS = ['@p', '@a', '@r', '@e', '@s'];
-
-const REGISTRIES = {
-    ENTITY_TYPE: 'entity_type',
-    ITEM: 'item',
-    DIMENSION: 'dimension',
-    BIOME: 'worldgen/biome',
-    ATTRIBUTE: 'attribute',
-    PARTICLE: 'particle_type',
-    RECIPE: 'recipe_type',
-    SOUND: 'sound_event',
-    POTION: 'potion',
-    ENCHANTMENT: 'enchantment'
-};
+import { 
+  type CompletionItem, 
+  CompletionKind, 
+  type CompletionContext, 
+  NodeType, 
+  type CommandNode, 
+  type ParsedCommand 
+} from './Types';
+import { 
+  COMMANDS, 
+  SELECTORS, 
+  REGISTRIES, 
+  PARSER_REGISTRIES, 
+  PARSER_SUGGESTIONS 
+} from './Constants';
 
 export interface CompletionOptions {
   cacheProvider?: CacheProvider;
   baseUrl?: string;
   version?: string;
 }
-
-interface CommandNode {
-  type: string;
-  children?: Record<string, CommandNode>;
-  executable?: boolean;
-  parser?: string;
-  properties?: Record<string, any>;
-  redirect?: string[];
-  permission?: {
-    type: string;
-    permission?: {
-      type: string;
-      level?: string;
-    };
-  };
-}
-
-interface ParsedCommand {
-  name: string;
-  description: string;
-  node: CommandNode;
-  path?: string[];
-}
-
-const PARSER_REGISTRIES: Record<string, string> = {
-  'minecraft:entity': 'entity_type',
-  'minecraft:entity_summon': 'entity_type',
-  'minecraft:game_profile': 'entity_type',
-  'minecraft:item_predicate': 'item',
-  'minecraft:item_stack': 'item',
-  'minecraft:block_pos': 'dimension',
-  'minecraft:resource_location': 'worldgen/biome',
-  'minecraft:nbt_path': 'attribute',
-  'minecraft:particle': 'particle_type',
-  'minecraft:mob': 'entity_type',
-  'minecraft:recipe': 'recipe_type',
-  'minecraft:sound': 'sound_event',
-  'minecraft:potion': 'potion',
-  'minecraft:enchantment': 'enchantment',
-};
-
-const PARSER_SUGGESTIONS: Record<string, string[]> = {
-  'brigadier:bool': ['true', 'false'],
-  'brigadier:float': ['0.0'],
-  'brigadier:integer': ['0'],
-  'minecraft:block_pos': ['~ ~ ~', '~', '0 0 0'],
-  'minecraft:vec3': ['~ ~ ~', '0.0 0.0 0.0'],
-  'minecraft:vec2': ['~ ~', '0.0 0.0'],
-  'minecraft:nbt_compound_tag': ['{}', '{PersistenceRequired:1}', '{CustomName:\'""\'}', '{NoAI:1}'],
-  'minecraft:entity_anchor': ['eyes', 'feet'],
-  'minecraft:swizzle': ['x', 'y', 'z', 'xy', 'xz', 'yz', 'xyz'],
-  'minecraft:operation': ['=', '+=', '-=', '*=', '/=', '%=', '<', '>', '><'],
-};
 
 export class CompletionProvider {
   private fetcher: DataFetcher;
@@ -158,16 +38,11 @@ export class CompletionProvider {
     });
     
     // Add a dedicated fetcher for registries using the registries branch
-    // Registries usually reside in registries branch under <name>/data.json
     this.registryFetcher = new DataFetcher({
         cacheProvider: options.cacheProvider,
         baseUrl: options.baseUrl,
-        version: 'registries' // Always use registries branch for registry data
+        version: 'registries'
     });
-  }
-
-  async getEntities(): Promise<string[]> {
-    return this.loadRegistry('entity_type');
   }
 
   async getCompletions(context: CompletionContext): Promise<CompletionItem[]> {
@@ -189,7 +64,6 @@ export class CompletionProvider {
     const fullText = context.lineText;
     const textBeforeCursor = fullText.substring(0, context.character);
     
-    // Command parts before cursor
     const rawParts = textBeforeCursor.startsWith('/') 
       ? textBeforeCursor.slice(1).split(/\s+/)
       : textBeforeCursor.split(/\s+/);
@@ -198,7 +72,6 @@ export class CompletionProvider {
     const currentIndex = rawParts.length - 1;
     const currentPart = rawParts[currentIndex] || '';
     
-    // If we're at the very beginning and there's no slash, this is probably not a command context
     if (currentIndex === 0 && !textBeforeCursor.startsWith('/')) {
         return {
           type: 'none',
@@ -262,7 +135,6 @@ export class CompletionProvider {
     const traversal = this.traversePath(commands, parts, currentIndex);
     
     if (!traversal.currentNode || !traversal.currentNode.children) {
-      // If we hit a redirect at the end, or no children found, return to top-level
       return this.getTopLevelCommands(commands, true, currentPart);
     }
     
@@ -302,7 +174,6 @@ export class CompletionProvider {
           }
         } else {
           currentNode = nextNode;
-          // If this is an argument that consumes multiple tokens, skip them
           if (currentNode.type === NodeType.Argument && currentNode.parser) {
               const consumed = this.getTokensConsumed(currentNode.parser);
               i += consumed - 1;
@@ -323,14 +194,11 @@ export class CompletionProvider {
     } 
     
     if (currentNode.children) {
-      // Check literals first
       for (const [childName, childNode] of Object.entries(currentNode.children)) {
         if (childNode.type === NodeType.Literal && childName.toLowerCase().startsWith(part.toLowerCase())) {
           return childNode;
         }
       }
-      
-      // Fallback to first argument node
       return Object.values(currentNode.children).find(node => node.type === NodeType.Argument);
     }
 
@@ -355,7 +223,6 @@ export class CompletionProvider {
         return { node: targetCmd.node, name: redirectTarget, newIndex: i };
     }
 
-    // Redirect to global root (top-level commands)
     const nextPart = parts[i + 1];
     if (nextPart && commands.has(nextPart)) {
         const targetCmd = commands.get(nextPart)!;
@@ -414,7 +281,6 @@ export class CompletionProvider {
     const parser = node.parser || 'unknown';
     const items: CompletionItem[] = [];
 
-    // Target Selector support
     if (currentPart.startsWith('@') && parser.includes('entity')) {
       for (const selector of SELECTORS) {
         if (selector.startsWith(currentPart)) {
@@ -481,7 +347,6 @@ export class CompletionProvider {
       return this.loadRegistry(REGISTRIES.ENTITY_TYPE);
     }
 
-    // Default hardcoded suggestions
     if (PARSER_SUGGESTIONS[parser]) {
         return PARSER_SUGGESTIONS[parser];
     }
@@ -504,7 +369,6 @@ export class CompletionProvider {
     }
     
     try {
-      // Registries in misode/mcmeta registries branch are frequently just a string array
       const data = await this.registryFetcher.fetch<any>(`${name}/data.json`);
       let entries: string[] = [];
       
@@ -519,8 +383,7 @@ export class CompletionProvider {
       entries.sort();
       this.cachedRegistries.set(name, entries);
       return entries;
-    } catch (e) {
-      // Don't log if it's a known non-registry or offline
+    } catch {
       return [];
     }
   }

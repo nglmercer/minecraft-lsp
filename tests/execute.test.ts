@@ -1,6 +1,7 @@
 import { describe, expect, test, beforeEach } from 'bun:test';
 import { MemoryCache } from '../src/core/Cache';
-import { CompletionProvider, type CompletionContext } from '../src/core/CompletionProvider';
+import { CompletionProvider } from '../src/core/CompletionProvider';
+import { type CompletionContext } from '../src/core/Types';
 
 describe('CompletionProvider - Execute Commands', () => {
   let provider: CompletionProvider;
