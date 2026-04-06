@@ -88,6 +88,7 @@ export class CompletionProvider {
     context: CompletionContext,
     analysis: { type: string; parts: string[]; currentIndex: number; currentPart: string }
   ): Promise<CompletionItem[]> {
+    console.log(`getCommandCompletions: text="${context.lineText}", currentIndex=${analysis.currentIndex}, currentPart="${analysis.currentPart}"`);
     const commands = await this.loadCommandTree();
     const { parts, currentIndex, currentPart } = analysis;
     
@@ -128,8 +129,10 @@ export class CompletionProvider {
     currentPart: string
   ): Promise<CompletionItem[]> {
     const traversal = this.traversePath(commands, parts, currentIndex);
+    console.log(`getSubCommandCompletions: traversal=${traversal ? 'found' : 'missing'}, currentIndex=${currentIndex}, parts=[${parts}], currentPart="${currentPart}"`);
     
-    if (!traversal || !traversal.currentNode || !traversal.currentNode.children) {
+    if (!traversal || !traversal.currentNode || (!traversal.currentNode.children && !traversal.currentNode.redirect)) {
+      console.log(`  - Returning top level commands (omitSlash=true)`);
       return this.getTopLevelCommands(commands, true, currentPart);
     }
     
@@ -145,7 +148,6 @@ export class CompletionProvider {
     let currentNode: CommandNode | undefined;
     
     if (!commandName || !commands.has(commandName)) {
-      console.log('COMMAND MAP KEYS:', Array.from(commands.keys()).slice(0, 10));
       return undefined;
     }
 
@@ -180,6 +182,7 @@ export class CompletionProvider {
       }
     }
 
+    console.log(`traversePath: commandName="${commandName}", currentNode=${currentNode ? 'found' : 'missing'}`);
     return currentNode ? { currentNode, commandName } : undefined;
   }
 
@@ -276,10 +279,12 @@ export class CompletionProvider {
     const items: Promise<CompletionItem[]>[] = [];
     const isPartial = currentPart !== '';
 
+    console.log(`getNodeSuggestions: commandName=${commandName}, currentPart="${currentPart}", children=${Object.keys(node.children || {})}`);
     for (const [name, childNode] of Object.entries(node.children)) {
       if (childNode.type === NodeType.Literal) {
         items.push(Promise.resolve(this.getLiteralSuggestions(name, childNode, commandName, currentPart, isPartial)));
       } else if (childNode.type === NodeType.Argument) {
+        console.log(`  - Checking argument: parser=${childNode.parser}`);
         items.push(this.getArgumentSuggestions(childNode, commandName, currentPart, isPartial));
       }
     }
@@ -315,7 +320,13 @@ export class CompletionProvider {
     const parser = node.parser || 'unknown';
     const items: CompletionItem[] = [];
 
-    const isEntity = parser.includes('entity');
+    const isEntity = parser.includes('entity') || 
+                     parser.includes('game_profile') || 
+                     parser.includes('mob') || 
+                     parser.includes('player') || 
+                     parser.includes('selector') ||
+                     parser.includes('score_holder') ||
+                     parser.includes('target');
     
     if (isEntity) {
       for (const selector of SELECTORS) {

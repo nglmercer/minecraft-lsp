@@ -218,7 +218,6 @@ describe('CompletionProvider - Argument Types', () => {
       };
       const completions = await provider.getCompletions(context);
       const labels = completions.map(c => c.label);
-      console.log('LABELS:', labels);
       expect(labels).toContain('@a');
       expect(labels).toContain('@p');
     });
