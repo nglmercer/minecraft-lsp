@@ -18,36 +18,36 @@ export class RegistryProvider {
     this.fetcher = new DataFetcher({
       cacheProvider: options.cacheProvider,
       baseUrl: options.baseUrl,
-      version: options.version,
+      version: options.version || 'registries',
     });
   }
 
   async getItems(): Promise<string[]> {
-    return this.loadRegistry('items');
+    return this.loadRegistry('item');
   }
 
   async getBlocks(): Promise<string[]> {
-    return this.loadRegistry('blocks');
+    return this.loadRegistry('block');
   }
 
   async getEntities(): Promise<string[]> {
-    return this.loadRegistry('entities');
+    return this.loadRegistry('entity_type');
   }
 
   async getEffects(): Promise<string[]> {
-    return this.loadRegistry('potions');
+    return this.loadRegistry('potion');
   }
 
   async getEnchantments(): Promise<string[]> {
-    return this.loadRegistry('enchantments');
+    return this.loadRegistry('enchantment');
   }
 
   async getParticles(): Promise<string[]> {
-    return this.loadRegistry('particles');
+    return this.loadRegistry('particle_type');
   }
 
   async getSounds(): Promise<string[]> {
-    return this.loadRegistry('sounds');
+    return this.loadRegistry('sound_event');
   }
 
   async getBiomes(): Promise<string[]> {
@@ -72,8 +72,8 @@ export class RegistryProvider {
 
   async getAllRegistries(): Promise<Record<string, string[]>> {
     const registries = [
-      'items', 'blocks', 'entities', 'potions', 'enchantments',
-      'particles', 'sounds', 'dimension', 'loot_tables', 'recipes'
+      'item', 'block', 'entity_type', 'potion', 'enchantment',
+      'particle_type', 'sound_event', 'dimension', 'loot_tables', 'recipe_type'
     ];
     
     const result: Record<string, string[]> = {};
@@ -91,10 +91,13 @@ export class RegistryProvider {
     }
     
     try {
-      const data = await this.fetcher.fetch<RegistryData>(`registries/${name}.json`);
-      const entries: string[] = [];
+      // Fetch from the registries branch structure: <name>/data.json
+      const data = await this.fetcher.fetch<RegistryData | string[]>(`${name}/data.json`);
+      let entries: string[] = [];
       
-      if (data?.entries) {
+      if (Array.isArray(data)) {
+        entries = data.map(key => key.replace(/^minecraft:/, ''));
+      } else if (data && typeof data === 'object' && 'entries' in data && data.entries) {
         for (const [key] of Object.entries(data.entries)) {
           entries.push(key.replace(/^minecraft:/, ''));
         }
@@ -103,7 +106,8 @@ export class RegistryProvider {
       entries.sort();
       this.cache.set(name, entries);
       return entries;
-    } catch {
+    } catch (e) {
+      console.error(`Failed to load registry ${name}:`, e);
       return [];
     }
   }

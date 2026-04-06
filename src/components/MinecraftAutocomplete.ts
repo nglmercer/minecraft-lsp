@@ -321,18 +321,32 @@ export class MinecraftAutocomplete extends LitElement {
   }
 
   private selectSuggestion(item: CompletionItem) {
-    const parts = this.value.substring(0, this.inputElement?.selectionStart || 0).split(/\s+/);
-    parts.pop(); // Remove the partial part
+    const cursorPosition = this.inputElement?.selectionStart || 0;
+    const textBeforeCursor = this.value.substring(0, cursorPosition);
+    const textAfterCursor = this.value.substring(cursorPosition);
     
+    // Find the start of the current word (the word we're replacing)
+    // We look for the last space before the cursor
+    const lastSpaceIndex = textBeforeCursor.lastIndexOf(' ');
+    const startIndex = lastSpaceIndex === -1 ? 0 : lastSpaceIndex + 1;
+    
+    const textBeforeWord = this.value.substring(0, startIndex);
     const insertText = item.insertText || item.label;
-    const newValue = parts.join(' ') + (parts.length > 0 ? ' ' : '') + insertText;
     
-    this.value = newValue + (this.value.substring(this.inputElement?.selectionStart || 0));
+    // Construct the new value
+    this.value = textBeforeWord + insertText + textAfterCursor;
+    
     this.showSuggestions = false;
     this.selectedIndex = -1;
     
+    // Focus back and set cursor position after the inserted text
     if (this.inputElement) {
         this.inputElement.focus();
+        const newCursorPos = startIndex + insertText.length;
+        // Need to wait for Lit to update or use requestAnimationFrame
+        setTimeout(() => {
+          this.inputElement!.setSelectionRange(newCursorPos, newCursorPos);
+        }, 0);
     }
 
     this.dispatchEvent(new CustomEvent('suggestion-selected', {

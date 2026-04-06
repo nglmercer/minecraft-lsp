@@ -87,19 +87,20 @@ interface ParsedCommand {
 }
 
 const PARSER_REGISTRIES: Record<string, string> = {
-  'minecraft:entity': 'entities',
-  'minecraft:game_profile': 'entities',
-  'minecraft:item_predicate': 'items',
-  'minecraft:item_stack': 'items',
-  'minecraft:block_pos': 'dimensions',
-  'minecraft:resource_location': 'tags',
-  'minecraft:nbt_path': 'tags',
-  'minecraft:particle': 'particles',
-  'minecraft: mob': 'entities',
-  'minecraft:recipe': 'recipes',
-  'minecraft:sound': 'sounds',
-  'minecraft:potion': 'effects',
-  'minecraft: Enchantment': 'enchantments',
+  'minecraft:entity': 'entity_type',
+  'minecraft:entity_summon': 'entity_type',
+  'minecraft:game_profile': 'entity_type',
+  'minecraft:item_predicate': 'item',
+  'minecraft:item_stack': 'item',
+  'minecraft:block_pos': 'dimension',
+  'minecraft:resource_location': 'worldgen/biome',
+  'minecraft:nbt_path': 'attribute',
+  'minecraft:particle': 'particle_type',
+  'minecraft:mob': 'entity_type',
+  'minecraft:recipe': 'recipe_type',
+  'minecraft:sound': 'sound_event',
+  'minecraft:potion': 'potion',
+  'minecraft:enchantment': 'enchantment',
 };
 
 const PARSER_SUGGESTIONS: Record<string, string[]> = {
@@ -110,6 +111,7 @@ const PARSER_SUGGESTIONS: Record<string, string[]> = {
 
 export class CompletionProvider {
   private fetcher: DataFetcher;
+  private registryFetcher: DataFetcher; 
   private cachedCommands: Map<string, ParsedCommand> = new Map();
   private cachedRegistries: Map<string, string[]> = new Map();
   private version: string;
@@ -121,6 +123,18 @@ export class CompletionProvider {
       baseUrl: options.baseUrl,
       version: this.version,
     });
+    
+    // Add a dedicated fetcher for registries using the registries branch
+    // Registries usually reside in registries branch under <name>/data.json
+    this.registryFetcher = new DataFetcher({
+        cacheProvider: options.cacheProvider,
+        baseUrl: options.baseUrl,
+        version: 'registries' // Always use registries branch for registry data
+    });
+  }
+
+  async getEntities(): Promise<string[]> {
+    return this.loadRegistry('entity_type');
   }
 
   async getCompletions(context: CompletionContext): Promise<CompletionItem[]> {
@@ -137,58 +151,40 @@ export class CompletionProvider {
     type: string; 
     parts: string[]; 
     currentIndex: number;
+    currentPart: string;
   } {
-    const text = context.lineText.trim();
-    const parts = text.startsWith('/') 
-      ? text.slice(1).split(/\s+/)
-      : text.split(/\s+/);
+    const fullText = context.lineText;
+    const textBeforeCursor = fullText.substring(0, context.character);
+    
+    // Command parts before cursor
+    const rawParts = textBeforeCursor.startsWith('/') 
+      ? textBeforeCursor.slice(1).split(/\s+/)
+      : textBeforeCursor.split(/\s+/);
+      
+    const parts = rawParts.filter((p, i) => i < rawParts.length - 1 || p.length > 0);
+    const currentIndex = rawParts.length - 1;
+    const currentPart = rawParts[currentIndex] || '';
     
     return {
       type: 'command',
-      parts: parts.filter(p => p.length > 0),
-      currentIndex: parts.length - 1,
+      parts: parts,
+      currentIndex,
+      currentPart
     };
   }
 
   private async getCommandCompletions(
     context: CompletionContext,
-    analysis: { type: string; parts: string[]; currentIndex: number }
+    analysis: { type: string; parts: string[]; currentIndex: number; currentPart: string }
   ): Promise<CompletionItem[]> {
     const commands = await this.loadCommandTree();
-    const parts = analysis.parts;
+    const { parts, currentIndex, currentPart } = analysis;
     
-    if (parts.length === 0) {
-      return this.getTopLevelCommands(commands);
+    if (currentIndex === 0) {
+      return this.findMatchingCommands(commands, parts, currentPart);
     }
     
-    const commandName = parts[0];
-    
-    if (!commands.has(commandName!)) {
-      if (parts.length === 1 && commandName) {
-        return this.findMatchingCommands(commands, parts, commandName);
-      }
-      return this.getTopLevelCommands(commands);
-    }
-    
-    if (parts.length === 1) {
-      const subcommands = await this.getSubCommandCompletions(commands, parts, '');
-      return subcommands;
-    }
-    
-    const commandNode = commands.get(commandName!)!.node;
-    let lastPartComplete = false;
-    
-    for (let i = 1; i < parts.length; i++) {
-      const part = parts[i];
-      if (!part) continue;
-      const child = commandNode.children?.[part];
-      if (child?.type === 'literal') {
-        lastPartComplete = true;
-      }
-    }
-    
-    const currentPart = lastPartComplete ? '' : (parts[parts.length - 1] || '');
-    return this.getSubCommandCompletions(commands, parts, currentPart);
+    return this.getSubCommandCompletions(commands, parts, currentIndex, currentPart);
   }
 
   private getTopLevelCommands(commands: Map<string, ParsedCommand>): CompletionItem[] {
@@ -210,6 +206,7 @@ export class CompletionProvider {
   private async getSubCommandCompletions(
     commands: Map<string, ParsedCommand>,
     parts: string[],
+    currentIndex: number,
     currentPart: string
   ): Promise<CompletionItem[]> {
     const items: CompletionItem[] = [];
@@ -220,7 +217,7 @@ export class CompletionProvider {
     if (commands.has(commandName!)) {
       currentNode = commands.get(commandName!)!.node;
       
-      for (let i = 1; i < parts.length && currentNode; i++) {
+      for (let i = 1; i < currentIndex && currentNode; i++) {
         const part = parts[i];
         if (!part) break;
         
@@ -263,7 +260,37 @@ export class CompletionProvider {
       } else if (node.type === 'argument') {
         const parser = node.parser || 'unknown';
         
-        if (!isPartial) {
+        // Target Selector support
+        if (currentPart.startsWith('@') && parser.includes('entity')) {
+          const selectors = ['@p', '@a', '@r', '@e', '@s'];
+          for (const selector of selectors) {
+            if (selector.startsWith(currentPart)) {
+              items.push({
+                label: selector,
+                kind: CompletionKind.Variable,
+                insertText: selector + ' ',
+                command: commandName,
+              });
+            }
+          }
+          continue; // Don't show registry items if typing selector
+        }
+        
+        const suggestions = await this.getSuggestionsForParser(parser, node.properties);
+        
+        if (suggestions.length > 0) {
+          for (const suggestion of suggestions) {
+            if (isPartial && !suggestion.toLowerCase().startsWith(currentPart.toLowerCase())) {
+              continue;
+            }
+            items.push({
+              label: suggestion,
+              kind: this.getKindForParser(parser),
+              insertText: suggestion + ' ',
+              command: commandName,
+            });
+          }
+        } else if (!isPartial) {
           items.push({
             label: `<${node.properties?.name || 'value'}>`,
             kind: CompletionKind.Variable,
@@ -311,17 +338,17 @@ export class CompletionProvider {
   }
 
   private async getSuggestionsForParser(parser: string, properties?: Record<string, any>): Promise<string[]> {
-    if (PARSER_SUGGESTIONS[parser]) {
-      return PARSER_SUGGESTIONS[parser];
+    if (properties?.registry) {
+      return this.loadRegistry(properties.registry.replace('minecraft:', ''));
     }
-    
+
+    if (parser === 'minecraft:entity_summon') {
+      return this.loadRegistry('entity_type');
+    }
+
     const registry = PARSER_REGISTRIES[parser];
     if (registry) {
       return this.loadRegistry(registry);
-    }
-    
-    if (properties?.registry) {
-      return this.loadRegistry(properties.registry.replace('minecraft:', ''));
     }
     
     if (properties?.value) {
@@ -337,19 +364,23 @@ export class CompletionProvider {
     }
     
     try {
-      const data = await this.fetcher.fetch<{ entries?: Record<string, any> }>(`registries/${name}.json`);
-      const entries: string[] = [];
+      // Registries in misode/mcmeta registries branch are frequently just a string array
+      const data = await this.registryFetcher.fetch<any>(`${name}/data.json`);
+      let entries: string[] = [];
       
-      if (data?.entries) {
+      if (Array.isArray(data)) {
+        entries = data.map(key => key.replace(/^minecraft:/, ''));
+      } else if (data && typeof data === 'object' && 'entries' in data && data.entries) {
         for (const [key] of Object.entries(data.entries)) {
-          entries.push(key.replace(`minecraft:`, ''));
+          entries.push(key.replace(/^minecraft:/, ''));
         }
       }
       
       entries.sort();
       this.cachedRegistries.set(name, entries);
       return entries;
-    } catch {
+    } catch (e) {
+      console.error(`Failed to load registry ${name}:`, e);
       return [];
     }
   }
