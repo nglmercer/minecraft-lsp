@@ -10,13 +10,14 @@ describe('ValidationProvider', () => {
     provider = new ValidationProvider({ cacheProvider: new MemoryCache() });
   });
 
-  test('validates known command', async () => {
+  test('validates known command with missing arguments', async () => {
     const diagnostics = await provider.validate({
       text: '/give',
       line: 0,
       character: 0,
     });
-    expect(diagnostics.length).toBe(0);
+    expect(diagnostics.length).toBe(1);
+    expect(diagnostics[0]!.code).toBe('MISSING_ARGUMENT');
   });
 
   test('detects unknown command', async () => {
@@ -52,6 +53,6 @@ describe('ValidationProvider', () => {
     await provider.validate({ text: '/give', line: 0, character: 0 });
     await provider.clearCache();
     const diagnostics = await provider.validate({ text: '/give', line: 0, character: 0 });
-    expect(diagnostics.length).toBe(0);
+    expect(diagnostics.length).toBe(1);
   });
 });

@@ -296,6 +296,7 @@ export class CompletionProvider {
     }
 
     const suggestions = await this.getSuggestionsForParser(parser, node.properties);
+    const argName = node.properties?.name || 'value';
     
     if (suggestions.length > 0) {
       for (const suggestion of suggestions) {
@@ -305,15 +306,17 @@ export class CompletionProvider {
         items.push({
           label: suggestion,
           kind: this.getKindForParser(parser),
+          detail: `(${argName})`,
           insertText: suggestion + ' ',
           command: commandName,
         });
       }
     } else if (!isPartial) {
       items.push({
-        label: `<${node.properties?.name || 'value'}>`,
+        label: `<${argName}>`,
         kind: CompletionKind.Variable,
         detail: parser.replace('minecraft:', '').replace('brigadier:', ''),
+        documentation: `Expected: ${parser}`,
         insertText: '',
         command: commandName,
       });

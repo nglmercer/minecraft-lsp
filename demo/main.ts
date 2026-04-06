@@ -1,21 +1,25 @@
-import { CompletionProvider } from '../src/index.ts';
+import { CompletionProvider, ValidationProvider } from '../src/index.ts';
 import '../src/components/MinecraftAutocomplete.ts';
 import { MinecraftAutocomplete } from '../src/components/MinecraftAutocomplete.ts';
 
 const provider = new CompletionProvider();
+const validator = new ValidationProvider();
 const editor = document.getElementById('editor') as MinecraftAutocomplete;
-if (editor){
 
-    // Set the provider (LSP agnostic)
+if (editor){
+    // Set the providers
     editor.provider = provider;
+    editor.validator = validator;
     
     editor.addEventListener('suggestion-selected', (e: Event) => {
         const detail = (e as CustomEvent).detail;
-        console.log('Selected:', detail.item);
+        console.log('Selected:', detail.item.label);
     });
     
     editor.addEventListener('change', (e: Event) => {
         const detail = (e as CustomEvent).detail;
-        console.log('Value changed:', detail.value);
+        if (detail.diagnostics && detail.diagnostics.length > 0) {
+            console.warn('Diagnostics:', detail.diagnostics);
+        }
     });
 }
