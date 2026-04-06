@@ -73,6 +73,15 @@ export class ValidationProvider {
     let currentNode: CommandNode | undefined = validCommands.get(commandName);
     let currentCommandName = commandName;
 
+    // Follow redirect if the root node itself is a redirect (e.g., 'tp' -> 'teleport')
+    if (currentNode && currentNode.redirect) {
+        const redirect = this.handleRedirect(validCommands, tokens, 0, currentNode);
+        if (redirect) {
+            currentNode = redirect.node;
+            currentCommandName = redirect.name;
+        }
+    }
+
     for (let i = 1; i < tokens.length && currentNode; i++) {
         const token = tokens[i];
         if (!token) break;

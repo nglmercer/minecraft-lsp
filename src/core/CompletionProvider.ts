@@ -17,6 +17,20 @@ export interface CompletionOptions {
   version?: string;
 }
 
+export const AnalysisType = {
+  None: 'none',
+  Command: 'command',
+} as const;
+
+export type AnalysisType = typeof AnalysisType[keyof typeof AnalysisType];
+
+export interface ContextAnalysis {
+  type: AnalysisType;
+  parts: string[];
+  currentIndex: number;
+  currentPart: string;
+}
+
 export class CompletionProvider {
   private fetcher: DataFetcher;
   private registryFetcher: DataFetcher; 
@@ -43,19 +57,14 @@ export class CompletionProvider {
   async getCompletions(context: CompletionContext): Promise<CompletionItem[]> {
     const analysis = this.analyzeContext(context);
     
-    if (analysis.type === 'command') {
+    if (analysis.type === AnalysisType.Command) {
       return this.getCommandCompletions(context, analysis);
     }
     
     return [];
   }
 
-  private analyzeContext(context: CompletionContext): { 
-    type: string; 
-    parts: string[]; 
-    currentIndex: number;
-    currentPart: string;
-  } {
+  private analyzeContext(context: CompletionContext): ContextAnalysis {
     const fullText = context.lineText;
     const textBeforeCursor = fullText.substring(0, context.character);
     
@@ -69,7 +78,7 @@ export class CompletionProvider {
     
     if (currentIndex === 0 && !textBeforeCursor.startsWith('/')) {
         return {
-          type: 'none',
+          type: AnalysisType.None,
           parts: [],
           currentIndex: 0,
           currentPart: ''
@@ -77,7 +86,7 @@ export class CompletionProvider {
     }
     
     return {
-      type: 'command',
+      type: AnalysisType.Command,
       parts: parts,
       currentIndex,
       currentPart
@@ -86,7 +95,7 @@ export class CompletionProvider {
 
   private async getCommandCompletions(
     context: CompletionContext,
-    analysis: { type: string; parts: string[]; currentIndex: number; currentPart: string }
+    analysis: ContextAnalysis
   ): Promise<CompletionItem[]> {
     console.log(`getCommandCompletions: text="${context.lineText}", currentIndex=${analysis.currentIndex}, currentPart="${analysis.currentPart}"`);
     const commands = await this.loadCommandTree();
@@ -152,6 +161,15 @@ export class CompletionProvider {
     }
 
     currentNode = commands.get(commandName)!.node;
+    
+    // Follow redirect if the root node itself is a redirect
+    if (currentNode && currentNode.redirect) {
+        const redirect = this.handleRedirect(commands, parts, 0, currentIndex, currentNode);
+        if (redirect) {
+            currentNode = redirect.node;
+            commandName = redirect.name;
+        }
+    }
     
     for (let i = 1; i < currentIndex && currentNode; i++) {
       const part = parts[i] || '';
