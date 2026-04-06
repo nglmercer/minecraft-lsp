@@ -211,23 +211,6 @@ export class MinecraftAutocomplete extends LitElement {
       background: #1e1e1e;
     }
 
-    .diagnostic-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 8px;
-      font-size: 12px;
-      line-height: 1.4;
-    }
-
-    .diag-error { color: #f44336; }
-    .diag-warning { color: #ff9800; }
-    .diag-info { color: #2196f3; }
-
-    .diag-icon {
-      font-weight: bold;
-      flex-shrink: 0;
-    }
-
     /* Scrollbar Styling */
     .suggestions-list::-webkit-scrollbar {
       width: 6px;
@@ -314,24 +297,6 @@ export class MinecraftAutocomplete extends LitElement {
       case CompletionKind.Enum: return 'e';
       case CompletionKind.EnumMember: return 'm';
       default: return 'v';
-    }
-  }
-
-  private getDiagClass(severity: DiagnosticSeverity): string {
-    switch (severity) {
-        case DiagnosticSeverity.Error: return 'diag-error';
-        case DiagnosticSeverity.Warning: return 'diag-warning';
-        case DiagnosticSeverity.Information:
-        case DiagnosticSeverity.Hint: return 'diag-info';
-        default: return '';
-    }
-  }
-
-  private getDiagIcon(severity: DiagnosticSeverity): string {
-    switch (severity) {
-        case DiagnosticSeverity.Error: return '❌';
-        case DiagnosticSeverity.Warning: return '⚠️';
-        default: return 'ℹ️';
     }
   }
 
