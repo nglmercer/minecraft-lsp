@@ -175,4 +175,28 @@ describe('CompletionProvider - Execute Redirect', () => {
     // Should contain entities like 'zombie', 'player', etc.
     expect(labels).toContain('zombie');
   });
+
+  test('returns coordinates after summon zombie ', async () => {
+    const context: CompletionContext = {
+      line: 0,
+      character: 15,
+      text: '/summon zombie ',
+      lineText: '/summon zombie ',
+    };
+    const completions = await provider.getCompletions(context);
+    const labels = completions.map(c => c.label);
+    expect(labels).toContain('~ ~ ~');
+  });
+
+  test('returns NBT suggestions after coordinates', async () => {
+    const context: CompletionContext = {
+      line: 0,
+      character: 21,
+      text: '/summon zombie ~ ~ ~ ',
+      lineText: '/summon zombie ~ ~ ~ ',
+    };
+    const completions = await provider.getCompletions(context);
+    const labels = completions.map(c => c.label);
+    expect(labels).toContain('{NoAI:1}');
+  });
 });

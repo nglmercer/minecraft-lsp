@@ -302,6 +302,11 @@ export class CompletionProvider {
           }
         } else {
           currentNode = nextNode;
+          // If this is an argument that consumes multiple tokens, skip them
+          if (currentNode.type === NodeType.Argument && currentNode.parser) {
+              const consumed = this.getTokensConsumed(currentNode.parser);
+              i += consumed - 1;
+          }
         }
       } else {
         currentNode = undefined;
@@ -449,6 +454,12 @@ export class CompletionProvider {
     }
 
     return items;
+  }
+
+  private getTokensConsumed(parser: string): number {
+    if (parser === 'minecraft:vec3' || parser === 'minecraft:block_pos') return 3;
+    if (parser === 'minecraft:vec2' || parser === 'minecraft:rotation' || parser === 'minecraft:column_pos') return 2;
+    return 1;
   }
 
   private getKindForParser(parser: string): CompletionKind {
