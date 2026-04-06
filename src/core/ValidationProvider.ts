@@ -19,6 +19,12 @@ export interface ValidationOptions {
   version?: string;
 }
 
+interface Token {
+  text: string;
+  start: number;
+  end: number;
+}
+
 export class ValidationProvider {
   private fetcher: DataFetcher;
   private commandTree: Map<string, CommandNode> = new Map();
@@ -33,26 +39,28 @@ export class ValidationProvider {
 
   async validate(context: ValidationContext): Promise<Diagnostic[]> {
     const diagnostics: Diagnostic[] = [];
-    const text = context.text.trim();
+    const text = context.text;
     
-    if (!text.startsWith('/')) {
+    if (!text.trim().startsWith('/')) {
       return diagnostics;
     }
     
-    const parts = text.slice(1).split(/\s+/).filter(p => p.length > 0);
-    
-    if (parts.length === 0) {
+    const tokens = this.tokenize(text);
+    if (tokens.length === 0) {
       return diagnostics;
     }
     
-    const commandName = parts[0];
+    const firstToken = tokens[0];
+    if (!firstToken) return diagnostics;
+
+    const commandName = firstToken.text;
     const validCommands = await this.loadCommands();
     
-    if (!validCommands.has(commandName!)) {
+    if (!validCommands.has(commandName)) {
       diagnostics.push({
         range: {
-          start: { line: context.line, character: 1 },
-          end: { line: context.line, character: 1 + commandName!.length },
+          start: { line: context.line, character: firstToken.start },
+          end: { line: context.line, character: firstToken.end },
         },
         severity: DiagnosticSeverity.Error,
         message: `Unknown command: /${commandName}`,
@@ -61,77 +69,63 @@ export class ValidationProvider {
       return diagnostics;
     }
     
-    let currentNode: CommandNode | undefined = validCommands.get(commandName!)!;
-    
-    for (let i = 1; i < parts.length && currentNode; i++) {
-        const part = parts[i]!;
-        
-        // Literal check
-        if (currentNode.children?.[part]) {
-            currentNode = currentNode.children[part];
-            continue;
-        }
+    let currentNode: CommandNode | undefined = validCommands.get(commandName);
+    let currentCommandName = commandName;
 
-        // Case-insensitive literal check or Argument check
-        if (currentNode.children) {
-            let nextNode: CommandNode | undefined;
-            
-            // Try literal case-insensitive
-            for (const [childName, childNode] of Object.entries(currentNode.children)) {
-                if (childNode.type === NodeType.Literal && childName.toLowerCase() === part.toLowerCase()) {
-                    nextNode = childNode;
-                    break;
+    for (let i = 1; i < tokens.length && currentNode; i++) {
+        const token = tokens[i];
+        if (!token) break;
+        
+        let nextNode: CommandNode | undefined = this.findNextNode(currentNode, token.text);
+
+        if (nextNode) {
+            if (this.isRedirect(nextNode, token.text)) {
+                const redirect = this.handleRedirect(validCommands, tokens, i, nextNode);
+                if (redirect) {
+                    currentNode = redirect.node;
+                    currentCommandName = redirect.name;
+                    continue;
                 }
             }
 
-            // Try argument
-            if (!nextNode) {
-                const argNode: CommandNode | undefined = Object.values(currentNode.children).find(n => n.type === NodeType.Argument);
-                if (argNode) {
-                    const validation = this.validateArgument(part, argNode);
-                    if (validation.isValid) {
-                        nextNode = argNode;
-                    } else {
+            if (nextNode.type === NodeType.Argument && nextNode.parser) {
+                const consumed = this.getTokensConsumed(nextNode.parser);
+                const argTokens = tokens.slice(i, i + consumed);
+                
+                if (argTokens.length > 0) {
+                    const argText = argTokens.map(t => t.text).join(' ');
+                    
+                    const lastArgToken = argTokens[argTokens.length - 1];
+                    const validation = this.validateArgument(argText, nextNode);
+                    if (!validation.isValid) {
                         diagnostics.push({
                             range: {
-                                start: { line: context.line, character: this.getCharacterPosition(text, i) },
-                                end: { line: context.line, character: this.getCharacterPosition(text, i) + part.length },
+                                start: { line: context.line, character: token.start },
+                                end: { line: context.line, character: lastArgToken ? lastArgToken.end : token.end },
                             },
                             severity: DiagnosticSeverity.Error,
-                            message: validation.message || `Invalid argument for ${argNode.properties?.name || 'value'}`,
+                            message: validation.message || `Invalid argument for ${nextNode.properties?.name || 'value'}`,
                             code: 'INVALID_ARGUMENT',
                         });
                         currentNode = undefined;
                         break;
                     }
                 }
-            }
-
-            if (nextNode) {
+                
+                i += consumed - 1;
                 currentNode = nextNode;
             } else {
-                diagnostics.push({
-                    range: {
-                        start: { line: context.line, character: this.getCharacterPosition(text, i) },
-                        end: { line: context.line, character: this.getCharacterPosition(text, i) + part.length },
-                    },
-                    severity: DiagnosticSeverity.Error,
-                    message: `Unknown argument or subcommand: ${part}`,
-                    code: 'UNKNOWN_SUBCOMMAND',
-                });
-                currentNode = undefined;
-                break;
+                currentNode = nextNode;
             }
         } else {
-            // No children but not finished
             diagnostics.push({
                 range: {
-                    start: { line: context.line, character: this.getCharacterPosition(text, i) },
-                    end: { line: context.line, character: this.getCharacterPosition(text, i) + part.length },
+                    start: { line: context.line, character: token.start },
+                    end: { line: context.line, character: token.end },
                 },
-                severity: DiagnosticSeverity.Warning,
-                message: `Unexpected argument: ${part}`,
-                code: 'UNEXPECTED_ARGUMENT',
+                severity: DiagnosticSeverity.Error,
+                message: `Unknown argument or subcommand: ${token.text}`,
+                code: 'UNKNOWN_SUBCOMMAND',
             });
             currentNode = undefined;
             break;
@@ -157,17 +151,131 @@ export class ValidationProvider {
     return diagnostics;
   }
 
-  private getCharacterPosition(text: string, wordIndex: number): number {
-    const parts = text.split(/\s+/);
-    let position = 1;
+  private tokenize(text: string): Token[] {
+    const tokens: Token[] = [];
+    let i = 0;
     
-    for (let i = 0; i < wordIndex && i < parts.length; i++) {
-      //if (!parts[i]) continue;
-      position += parts[i]!.length + 1;
+    // Skip leading slash
+    if (text.startsWith('/')) {
+        i++;
+    }
+
+    while (i < text.length) {
+        // Skip whitespace
+        while (i < text.length && /\s/.test(text[i]!)) {
+            i++;
+        }
+        
+        if (i >= text.length) break;
+        
+        const start = i + 1;
+        let current = "";
+        
+        if (text[i] === '"') {
+            // Quoted string
+            current += text[i];
+            i++;
+            while (i < text.length) {
+                if (text[i] === '\\' && i + 1 < text.length) {
+                    current += text[i]! + text[i+1];
+                    i += 2;
+                } else if (text[i] === '"') {
+                    current += text[i];
+                    i++;
+                    break;
+                } else {
+                    current += text[i];
+                    i++;
+                }
+            }
+        } else if (text[i] === '{' || text[i] === '[') {
+            // Brackets (NBT or selectors)
+            const open = text[i];
+            const close = open === '{' ? '}' : ']';
+            let depth = 0;
+            
+            while (i < text.length) {
+                current += text[i];
+                if (text[i] === open) depth++;
+                else if (text[i] === close) depth--;
+                
+                i++;
+                if (depth === 0) break;
+            }
+        } else {
+            // Regular word
+            while (i < text.length && !/\s/.test(text[i]!)) {
+                current += text[i]!;
+                i++;
+            }
+        }
+        
+        if (current.length > 0) {
+            tokens.push({
+                text: current,
+                start: start,
+                end: start + current.length
+            });
+        }
     }
     
-    return position;
+    return tokens;
   }
+
+  private findNextNode(currentNode: CommandNode, part: string): CommandNode | undefined {
+    if (currentNode.children && currentNode.children[part]) {
+      return currentNode.children[part];
+    } 
+    
+    if (currentNode.children) {
+      // Case-insensitive literal check
+      for (const [childName, childNode] of Object.entries(currentNode.children)) {
+        if (childNode.type === NodeType.Literal && childName.toLowerCase() === part.toLowerCase()) {
+          return childNode;
+        }
+      }
+      
+      // Try argument
+      return Object.values(currentNode.children).find(node => node.type === NodeType.Argument);
+    }
+
+    return undefined;
+  }
+
+  private isRedirect(node: CommandNode, part: string): boolean {
+    return !!node.redirect || (node.type === NodeType.Literal && part === 'run');
+  }
+
+  private handleRedirect(
+    commands: Map<string, CommandNode>,
+    tokens: Token[],
+    i: number,
+    node: CommandNode
+  ): { node: CommandNode; name: string } | undefined {
+    const redirectTarget = node.redirect?.[0];
+    
+    if (redirectTarget && redirectTarget !== "" && commands.has(redirectTarget)) {
+        return { node: commands.get(redirectTarget)!, name: redirectTarget };
+    }
+
+    // Special case for 'run' in execute
+    const nextToken = tokens[i + 1];
+    if (nextToken && commands.has(nextToken.text)) {
+        const targetNode = commands.get(nextToken.text);
+        if (targetNode) {
+            return { node: targetNode, name: nextToken.text };
+        }
+    }
+
+    return undefined;
+  }
+
+  private getTokensConsumed(parser: string): number {
+    if (parser === 'minecraft:vec3' || parser === 'minecraft:block_pos') return 3;
+    if (parser === 'minecraft:vec2' || parser === 'minecraft:rotation' || parser === 'minecraft:column_pos') return 2;
+    return 1;
+  }
+
 
   private validateArgument(part: string, node: CommandNode): { isValid: boolean; message?: string } {
     const parser = node.parser || 'unknown';
@@ -194,7 +302,22 @@ export class ValidationProvider {
             return { isValid: true };
         }
         case 'minecraft:resource_location':
-            if (!part.match(/^[a-z0-9_./-]+$/)) return { isValid: false, message: `Invalid resource location for "${name}"` };
+        case 'minecraft:entity_summon':
+        case 'minecraft:item_stack':
+        case 'minecraft:item_predicate':
+        case 'minecraft:block_state':
+        case 'minecraft:block_predicate':
+        case 'minecraft:dimension':
+        case 'minecraft:biome':
+        case 'minecraft:entity':
+        case 'minecraft:game_profile':
+        case 'minecraft:vec3':
+        case 'minecraft:vec2':
+        case 'minecraft:block_pos':
+        case 'minecraft:column_pos':
+        case 'minecraft:rotation':
+        case 'minecraft:message':
+            if (!part.match(/^[a-z0-9_./:~\-@\[\]={}"', \b]+$/i)) return { isValid: false, message: `Invalid value for "${name}"` };
             return { isValid: true };
         default:
             return { isValid: true };
