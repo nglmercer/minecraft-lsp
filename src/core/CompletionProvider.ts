@@ -70,6 +70,7 @@ interface CommandNode {
   executable?: boolean;
   parser?: string;
   properties?: Record<string, any>;
+  redirect?: string[];
   permission?: {
     type: string;
     permission?: {
@@ -187,12 +188,12 @@ export class CompletionProvider {
     return this.getSubCommandCompletions(commands, parts, currentIndex, currentPart);
   }
 
-  private getTopLevelCommands(commands: Map<string, ParsedCommand>): CompletionItem[] {
+  private getTopLevelCommands(commands: Map<string, ParsedCommand>, omitSlash: boolean = false): CompletionItem[] {
     const items: CompletionItem[] = [];
     
     for (const [name, cmd] of commands) {
       items.push({
-        label: '/' + name,
+        label: (omitSlash ? '' : '/') + name,
         kind: CompletionKind.Function,
         detail: cmd.description,
         insertText: name + ' ',
@@ -215,25 +216,50 @@ export class CompletionProvider {
     let commandName = parts[0];
     
     if (commands.has(commandName!)) {
-      currentNode = commands.get(commandName!)!.node;
+      let rootNode = commands.get(commandName!)!.node;
+      currentNode = rootNode;
       
       for (let i = 1; i < currentIndex && currentNode; i++) {
         const part = parts[i];
         if (!part) break;
         
+        let nextNode: CommandNode | undefined;
+        
         if (currentNode.children && currentNode.children[part]) {
-          currentNode = currentNode.children[part];
+          nextNode = currentNode.children[part];
         } else if (currentNode.children) {
-          let found = false;
           for (const [childName, childNode] of Object.entries(currentNode.children)) {
             if (childNode.type === 'literal' && childName.toLowerCase().startsWith(part.toLowerCase())) {
-              currentNode = childNode;
-              found = true;
+              nextNode = childNode;
               break;
             }
           }
-          if (!found) break;
+        }
+        
+        if (nextNode) {
+          if (nextNode.redirect) {
+            // Redirect! Reset root and currentNode to follow the redirect.
+            // If i+1 < currentIndex, we should look up the NEXT part as a command name in the global map.
+            const nextPart = parts[i + 1];
+            if (nextPart && commands.has(nextPart)) {
+                rootNode = commands.get(nextPart)!.node;
+                currentNode = rootNode;
+                commandName = nextPart;
+                // Since we're jumping to index i+1, we increment i.
+                i++;
+            } else if (i === currentIndex - 1) {
+                // Return top-level commands if we just hit a redirect at the end
+                return this.getTopLevelCommands(commands, true);
+            } else {
+                // If the next word isn't a command, break
+                currentNode = undefined;
+                break;
+            }
+          } else {
+            currentNode = nextNode;
+          }
         } else {
+          currentNode = undefined;
           break;
         }
       }
