@@ -6,6 +6,7 @@ import {
   NodeType, 
   type CommandNode 
 } from './Types';
+import { validateArgument } from './Utils';
 
 export interface ValidationContext {
   text: string;
@@ -79,29 +80,21 @@ export class ValidationProvider {
         let nextNode: CommandNode | undefined = this.findNextNode(currentNode, token.text);
 
         if (nextNode) {
-            if (this.isRedirect(nextNode, token.text)) {
-                const redirect = this.handleRedirect(validCommands, tokens, i, nextNode);
-                if (redirect) {
-                    currentNode = redirect.node;
-                    currentCommandName = redirect.name;
-                    continue;
-                }
-            }
-
+            const isRedirect = this.isRedirect(nextNode, token.text);
+            
             if (nextNode.type === NodeType.Argument && nextNode.parser) {
-                const consumed = this.getTokensConsumed(nextNode.parser);
+                const consumed = this.getTokensConsumed(nextNode.parser, nextNode.properties, tokens.length - i);
                 const argTokens = tokens.slice(i, i + consumed);
                 
                 if (argTokens.length > 0) {
                     const argText = argTokens.map(t => t.text).join(' ');
                     
-                    const lastArgToken = argTokens[argTokens.length - 1];
-                    const validation = this.validateArgument(argText, nextNode);
+                    const validation = validateArgument(argText, nextNode);
                     if (!validation.isValid) {
                         diagnostics.push({
                             range: {
                                 start: { line: context.line, character: token.start },
-                                end: { line: context.line, character: lastArgToken ? lastArgToken.end : token.end },
+                                end: { line: context.line, character: argTokens[argTokens.length - 1]!.end },
                             },
                             severity: DiagnosticSeverity.Error,
                             message: validation.message || `Invalid argument for ${nextNode.properties?.name || 'value'}`,
@@ -116,6 +109,18 @@ export class ValidationProvider {
                 currentNode = nextNode;
             } else {
                 currentNode = nextNode;
+            }
+
+            if (isRedirect) {
+                const redirect = this.handleRedirect(validCommands, tokens, i, currentNode);
+                if (redirect) {
+                    currentNode = redirect.node;
+                    currentCommandName = redirect.name;
+                    // For keyword redirects like 'run', we consumed the next token as command name
+                    if (token.text === 'run') {
+                        i++;
+                    }
+                }
             }
         } else {
             diagnostics.push({
@@ -235,8 +240,14 @@ export class ValidationProvider {
         }
       }
       
-      // Try argument
-      return Object.values(currentNode.children).find(node => node.type === NodeType.Argument);
+      // Try all arguments until one validates
+      for (const node of Object.values(currentNode.children)) {
+        if (node.type === NodeType.Argument) {
+          if (validateArgument(part, node).isValid) {
+            return node;
+          }
+        }
+      }
     }
 
     return undefined;
@@ -252,10 +263,21 @@ export class ValidationProvider {
     i: number,
     node: CommandNode
   ): { node: CommandNode; name: string } | undefined {
-    const redirectTarget = node.redirect?.[0];
-    
-    if (redirectTarget && redirectTarget !== "" && commands.has(redirectTarget)) {
-        return { node: commands.get(redirectTarget)!, name: redirectTarget };
+    const redirect = node.redirect as any;
+    if (redirect) {
+        const path = Array.isArray(redirect) ? redirect : [redirect];
+        const rootName = path[0];
+        const targetCmd = commands.get(rootName);
+        if (targetCmd) {
+            let current = targetCmd;
+            for (let j = 1; j < path.length && current; j++) {
+                const nextKey = path[j];
+                current = current.children?.[nextKey] as CommandNode;
+            }
+            if (current) {
+                return { node: current, name: rootName };
+            }
+        }
     }
 
     // Special case for 'run' in execute
@@ -270,59 +292,16 @@ export class ValidationProvider {
     return undefined;
   }
 
-  private getTokensConsumed(parser: string): number {
+  private getTokensConsumed(parser: string, properties?: Record<string, any>, remaining?: number): number {
     if (parser === 'minecraft:vec3' || parser === 'minecraft:block_pos') return 3;
     if (parser === 'minecraft:vec2' || parser === 'minecraft:rotation' || parser === 'minecraft:column_pos') return 2;
+    if (parser === 'minecraft:message' || (parser === 'brigadier:string' && properties?.type === 'greedy')) {
+        return remaining || 1;
+    }
     return 1;
   }
 
 
-  private validateArgument(part: string, node: CommandNode): { isValid: boolean; message?: string } {
-    const parser = node.parser || 'unknown';
-    const name = node.properties?.name || 'value';
-    
-    switch (parser) {
-        case 'brigadier:integer': {
-            const val = parseInt(part);
-            if (isNaN(val)) return { isValid: false, message: `Expected integer for "${name}"` };
-            if (node.properties?.min !== undefined && val < node.properties.min) return { isValid: false, message: `Value must be at least ${node.properties.min}` };
-            if (node.properties?.max !== undefined && val > node.properties.max) return { isValid: false, message: `Value must be at most ${node.properties.max}` };
-            return { isValid: true };
-        }
-        case 'brigadier:float':
-        case 'brigadier:double': {
-            const val = parseFloat(part);
-            if (isNaN(val)) return { isValid: false, message: `Expected number for "${name}"` };
-            if (node.properties?.min !== undefined && val < node.properties.min) return { isValid: false, message: `Value must be at least ${node.properties.min}` };
-            if (node.properties?.max !== undefined && val > node.properties.max) return { isValid: false, message: `Value must be at most ${node.properties.max}` };
-            return { isValid: true };
-        }
-        case 'brigadier:bool': {
-            if (part !== 'true' && part !== 'false') return { isValid: false, message: `Expected true or false for "${name}"` };
-            return { isValid: true };
-        }
-        case 'minecraft:resource_location':
-        case 'minecraft:entity_summon':
-        case 'minecraft:item_stack':
-        case 'minecraft:item_predicate':
-        case 'minecraft:block_state':
-        case 'minecraft:block_predicate':
-        case 'minecraft:dimension':
-        case 'minecraft:biome':
-        case 'minecraft:entity':
-        case 'minecraft:game_profile':
-        case 'minecraft:vec3':
-        case 'minecraft:vec2':
-        case 'minecraft:block_pos':
-        case 'minecraft:column_pos':
-        case 'minecraft:rotation':
-        case 'minecraft:message':
-            if (!part.match(/^[a-z0-9_./:~\-@\[\]={}"', \b]+$/i)) return { isValid: false, message: `Invalid value for "${name}"` };
-            return { isValid: true };
-        default:
-            return { isValid: true };
-    }
-  }
 
   private getMissingArguments(node: CommandNode): string[] {
     const missing: string[] = [];

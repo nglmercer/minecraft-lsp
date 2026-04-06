@@ -8,13 +8,8 @@ import {
   type CommandNode, 
   type ParsedCommand 
 } from './Types';
-import { 
-  COMMANDS, 
-  SELECTORS, 
-  REGISTRIES, 
-  PARSER_REGISTRIES, 
-  PARSER_SUGGESTIONS 
-} from './Constants';
+import { REGISTRIES, SELECTORS, COMMANDS, PARSER_SUGGESTIONS, PARSER_REGISTRIES } from './Constants';
+import { validateArgument } from './Utils';
 
 export interface CompletionOptions {
   cacheProvider?: CacheProvider;
@@ -134,7 +129,7 @@ export class CompletionProvider {
   ): Promise<CompletionItem[]> {
     const traversal = this.traversePath(commands, parts, currentIndex);
     
-    if (!traversal.currentNode || !traversal.currentNode.children) {
+    if (!traversal || !traversal.currentNode || !traversal.currentNode.children) {
       return this.getTopLevelCommands(commands, true, currentPart);
     }
     
@@ -145,20 +140,19 @@ export class CompletionProvider {
     commands: Map<string, ParsedCommand>,
     parts: string[],
     currentIndex: number
-  ): { currentNode: CommandNode | undefined; commandName: string } {
+  ): { currentNode: CommandNode; commandName: string } | undefined {
     let commandName = parts[0] || '';
     let currentNode: CommandNode | undefined;
     
-    if (!commands.has(commandName)) {
-      return { currentNode: undefined, commandName };
+    if (!commandName || !commands.has(commandName)) {
+      console.log('COMMAND MAP KEYS:', Array.from(commands.keys()).slice(0, 10));
+      return undefined;
     }
 
     currentNode = commands.get(commandName)!.node;
     
     for (let i = 1; i < currentIndex && currentNode; i++) {
-      const part = parts[i];
-      if (!part) break;
-      
+      const part = parts[i] || '';
       const nextNode = this.findNextNode(currentNode, part);
       
       if (nextNode) {
@@ -168,24 +162,25 @@ export class CompletionProvider {
             currentNode = redirect.node;
             commandName = redirect.name;
             i = redirect.newIndex;
-          } else {
-            currentNode = undefined;
-            break;
+          } else if (part === 'run' || nextNode.redirect?.[0] === 'execute') {
+            // It directed to root or back to execute, if nothing followed, return undefined to trigger top-level
+            return undefined;
           }
         } else {
-          currentNode = nextNode;
-          if (currentNode.type === NodeType.Argument && currentNode.parser) {
-              const consumed = this.getTokensConsumed(currentNode.parser);
-              i += consumed - 1;
-          }
+            if (nextNode.type === NodeType.Argument && nextNode.parser) {
+                const consumed = this.getTokensConsumed(nextNode.parser, nextNode.properties, parts.length - i);
+                i += consumed - 1;
+                currentNode = nextNode;
+            } else {
+                currentNode = nextNode;
+            }
         }
       } else {
-        currentNode = undefined;
-        break;
+        return undefined;
       }
     }
 
-    return { currentNode, commandName };
+    return currentNode ? { currentNode, commandName } : undefined;
   }
 
   private findNextNode(currentNode: CommandNode, part: string): CommandNode | undefined {
@@ -199,7 +194,15 @@ export class CompletionProvider {
           return childNode;
         }
       }
-      return Object.values(currentNode.children).find(node => node.type === NodeType.Argument);
+      
+      // Try all arguments until one validates
+      for (const node of Object.values(currentNode.children)) {
+        if (node.type === NodeType.Argument) {
+          if (validateArgument(part, node).isValid) {
+            return node;
+          }
+        }
+      }
     }
 
     return undefined;
@@ -216,13 +219,15 @@ export class CompletionProvider {
     currentIndex: number,
     node: CommandNode
   ): { node: CommandNode; name: string; newIndex: number } | undefined {
-    if (node.redirect && node.redirect.length > 0) {
-        const rootName = node.redirect[0]!;
+    const redirect = node.redirect as any;
+    if (redirect) {
+        const path = Array.isArray(redirect) ? redirect : [redirect];
+        const rootName = path[0];
         const targetCmd = commands.get(rootName);
         if (targetCmd) {
             let current = targetCmd.node;
-            for (let j = 1; j < node.redirect.length && current; j++) {
-                const nextKey = node.redirect[j]!;
+            for (let j = 1; j < path.length && current; j++) {
+                const nextKey = path[j];
                 current = current.children?.[nextKey] as CommandNode;
             }
             if (current) {
@@ -237,6 +242,7 @@ export class CompletionProvider {
         return { node: targetCmd.node, name: nextPart, newIndex: i + 1 };
     }
 
+    // Default: if it's a redirect to root (like 'run' at the end of parts)
     return undefined;
   }
 
@@ -245,6 +251,26 @@ export class CompletionProvider {
     commandName: string,
     currentPart: string
   ): Promise<CompletionItem[]> {
+    const redirect = node.redirect as any;
+    if (redirect) {
+        const path = Array.isArray(redirect) ? redirect : [redirect];
+        const rootName = path[0];
+        
+        // We need to get the tree from the provider's commands map
+        const commands = await this.loadCommandTree();
+        const targetCmd = commands.get(rootName);
+        if (targetCmd) {
+            let current = targetCmd.node;
+            for (let j = 1; j < path.length && current; j++) {
+                const nextKey = path[j];
+                current = current.children?.[nextKey] as CommandNode;
+            }
+            if (current) {
+                return this.getNodeSuggestions(current, commandName, currentPart);
+            }
+        }
+    }
+
     if (!node.children) return [];
 
     const items: Promise<CompletionItem[]>[] = [];
@@ -337,9 +363,12 @@ export class CompletionProvider {
     return items;
   }
 
-  private getTokensConsumed(parser: string): number {
+  private getTokensConsumed(parser: string, properties?: Record<string, any>, remaining?: number): number {
     if (parser === 'minecraft:vec3' || parser === 'minecraft:block_pos') return 3;
     if (parser === 'minecraft:vec2' || parser === 'minecraft:rotation' || parser === 'minecraft:column_pos') return 2;
+    if (parser === 'minecraft:message' || (parser === 'brigadier:string' && properties?.type === 'greedy')) {
+        return remaining || 1;
+    }
     return 1;
   }
 

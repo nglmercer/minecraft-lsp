@@ -201,3 +201,49 @@ describe('CompletionProvider - Execute Redirect', () => {
     expect(labels).toContain('{NoAI:1}');
   });
 });
+
+describe('CompletionProvider - Argument Types', () => {
+    let provider: CompletionProvider;
+  
+    beforeEach(() => {
+      provider = new CompletionProvider({ cacheProvider: new MemoryCache() });
+    });
+  
+    test('returns selectors after @', async () => {
+      const context: CompletionContext = {
+        line: 0,
+        character: 5,
+        text: '/tp @',
+        lineText: '/tp @',
+      };
+      const completions = await provider.getCompletions(context);
+      const labels = completions.map(c => c.label);
+      console.log('LABELS:', labels);
+      expect(labels).toContain('@a');
+      expect(labels).toContain('@p');
+    });
+
+    test('returns xp suggestions', async () => {
+        const context: CompletionContext = {
+          line: 0,
+          character: 4,
+          text: '/xp ',
+          lineText: '/xp ',
+        };
+        const completions = await provider.getCompletions(context);
+        expect(completions.length).toBeGreaterThan(0);
+    });
+
+    test('returns gamemode suggestions', async () => {
+        const context: CompletionContext = {
+          line: 0,
+          character: 10,
+          text: '/gamemode ',
+          lineText: '/gamemode ',
+        };
+        const completions = await provider.getCompletions(context);
+        const labels = completions.map(c => c.label);
+        expect(labels).toContain('survival');
+        expect(labels).toContain('creative');
+    });
+});

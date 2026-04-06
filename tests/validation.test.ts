@@ -54,7 +54,6 @@ describe('ValidationProvider', () => {
   test('handles unexpected trailing arguments', async () => {
     const diagnostics = await provider.validate({ text: '/seed unexpected_arg', line: 0, character: 0 });
     if (diagnostics.length > 0) {
-      console.log(diagnostics);
         //UNKNOWN_SUBCOMMAND || UNEXPECTED_ARGUMENT
         expect(diagnostics.some(d => d.code === 'UNEXPECTED_ARGUMENT' || d.code === 'UNKNOWN_SUBCOMMAND')).toBe(true);
     }
@@ -75,6 +74,26 @@ describe('ValidationProvider', () => {
           // So '!!!' starts at 15.
           expect(char).toBe(15);
       }
+  });
+
+  test('validates execute redirection', async () => {
+    // This used to fail with "Unexpected argument: run"
+    const diagnostics = await provider.validate({
+      text: '/execute at @p run summon zombie',
+      line: 0,
+      character: 0,
+    });
+    expect(diagnostics.length).toBe(0);
+  });
+
+  test('validates coordinates and NBT', async () => {
+    // This used to fail at "~"
+    const diagnostics = await provider.validate({
+      text: '/summon zombie ~ ~ ~ {PersistenceRequired:1}',
+      line: 0,
+      character: 0,
+    });
+    expect(diagnostics.length).toBe(0);
   });
 
   test('clearCache works', async () => {
