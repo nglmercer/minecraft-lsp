@@ -1,6 +1,6 @@
 import { LitElement, html, css, type PropertyValueMap } from 'lit';
 import { customElement, property, state, query } from 'lit/decorators.js';
-import { type CompletionItem, CompletionKind } from '../core/CompletionProvider';
+import { type CompletionItem, CompletionKind } from '../core/Types';
 
 /**
  * Interface for the autocomplete provider.

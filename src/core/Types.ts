@@ -1,4 +1,4 @@
-export const enum CompletionKind {
+export enum CompletionKind {
   Text = 1,
   Method = 2,
   Function = 3,
@@ -26,7 +26,7 @@ export const enum CompletionKind {
   TypeParameter = 25,
 }
 
-export const enum NodeType {
+export enum NodeType {
   Literal = 'literal',
   Argument = 'argument',
 }
@@ -113,7 +113,7 @@ export interface Diagnostic {
   code?: string;
 }
 
-export const enum DiagnosticSeverity {
+export enum DiagnosticSeverity {
   Error = 1,
   Warning = 2,
   Information = 3,

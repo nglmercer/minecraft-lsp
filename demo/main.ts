@@ -8,11 +8,6 @@ if (editor){
 
     // Set the provider (LSP agnostic)
     editor.provider = provider;
-
-    // Demonstrate getting entities from cache
-    provider.getEntities().then(entities => {
-      console.log('Available entities:', entities.length);
-    });
     
     editor.addEventListener('suggestion-selected', (e: Event) => {
         const detail = (e as CustomEvent).detail;

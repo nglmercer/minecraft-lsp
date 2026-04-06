@@ -5,4 +5,6 @@ export * from './core/CompletionProvider';
 export * from './core/RegistryProvider';
 export * from './core/ValidationProvider';
 export * from './core/HoverProvider';
+export * from './core/Types';
+export * from './core/Constants';
 export * from './components/MinecraftAutocomplete';
