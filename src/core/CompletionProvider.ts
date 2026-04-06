@@ -58,6 +58,31 @@ export interface CompletionContext {
   triggerCharacter?: string;
 }
 
+export enum NodeType {
+  Literal = 'literal',
+  Argument = 'argument',
+}
+
+const COMMANDS = {
+  RUN: 'run',
+  EXECUTE: 'execute',
+};
+
+const SELECTORS = ['@p', '@a', '@r', '@e', '@s'];
+
+const REGISTRIES = {
+    ENTITY_TYPE: 'entity_type',
+    ITEM: 'item',
+    DIMENSION: 'dimension',
+    BIOME: 'worldgen/biome',
+    ATTRIBUTE: 'attribute',
+    PARTICLE: 'particle_type',
+    RECIPE: 'recipe_type',
+    SOUND: 'sound_event',
+    POTION: 'potion',
+    ENCHANTMENT: 'enchantment'
+};
+
 export interface CompletionOptions {
   cacheProvider?: CacheProvider;
   baseUrl?: string;
@@ -108,6 +133,13 @@ const PARSER_SUGGESTIONS: Record<string, string[]> = {
   'brigadier:bool': ['true', 'false'],
   'brigadier:float': ['0.0'],
   'brigadier:integer': ['0'],
+  'minecraft:block_pos': ['~ ~ ~', '~', '0 0 0'],
+  'minecraft:vec3': ['~ ~ ~', '0.0 0.0 0.0'],
+  'minecraft:vec2': ['~ ~', '0.0 0.0'],
+  'minecraft:nbt_compound_tag': ['{}', '{PersistenceRequired:1}', '{CustomName:\'""\'}', '{NoAI:1}'],
+  'minecraft:entity_anchor': ['eyes', 'feet'],
+  'minecraft:swizzle': ['x', 'y', 'z', 'xy', 'xz', 'yz', 'xyz'],
+  'minecraft:operation': ['=', '+=', '-=', '*=', '/=', '%=', '<', '>', '><'],
 };
 
 export class CompletionProvider {
@@ -227,146 +259,196 @@ export class CompletionProvider {
     currentIndex: number,
     currentPart: string
   ): Promise<CompletionItem[]> {
-    const items: CompletionItem[] = [];
+    const traversal = this.traversePath(commands, parts, currentIndex);
     
-    let currentNode: CommandNode | undefined;
-    let commandName = parts[0];
-    
-    if (commands.has(commandName!)) {
-      let rootNode = commands.get(commandName!)!.node;
-      currentNode = rootNode;
-      
-      for (let i = 1; i < currentIndex && currentNode; i++) {
-        const part = parts[i];
-        if (!part) break;
-        
-        let nextNode: CommandNode | undefined;
-        
-        if (currentNode.children && currentNode.children[part]) {
-          nextNode = currentNode.children[part];
-        } else if (currentNode.children) {
-          for (const [childName, childNode] of Object.entries(currentNode.children)) {
-            if (childNode.type === 'literal' && childName.toLowerCase().startsWith(part.toLowerCase())) {
-              nextNode = childNode;
-              break;
-            }
-          }
-          
-          // If no literal match, follow the first argument node found
-          if (!nextNode) {
-            for (const node of Object.values(currentNode.children)) {
-              if (node.type === 'argument') {
-                nextNode = node;
-                break;
-              }
-            }
-          }
-        }
-        
-        if (nextNode) {
-          if (nextNode.redirect || (nextNode.type === 'literal' && part === 'run')) {
-            // Redirect! Reset root and currentNode to follow the redirect.
-            // Misode/mcmeta data uses an array for redirect paths, e.g., ["execute"] or [""]
-            const redirectTarget = nextNode.redirect?.[0];
-            
-            if (redirectTarget && redirectTarget !== "" && commands.has(redirectTarget)) {
-                const targetCmd = commands.get(redirectTarget)!;
-                rootNode = targetCmd.node;
-                currentNode = rootNode;
-                commandName = redirectTarget;
-                // No i++ here, the next loop iteration will process parts[i+1] against this new root
-            } else {
-                // Redirect to global root (top-level commands)
-                const nextPart = parts[i + 1];
-                if (nextPart && commands.has(nextPart)) {
-                    const targetCmd = commands.get(nextPart)!;
-                    rootNode = targetCmd.node;
-                    currentNode = rootNode;
-                    commandName = nextPart;
-                    // Since we're jumping to the next word as a command name, we skip it
-                    i++;
-                } else if (i === currentIndex - 1) {
-                    // We are at the end of the redirect, return all top-level commands
-                    return this.getTopLevelCommands(commands, true, currentPart);
-                } else {
-                    // Path broken
-                    currentNode = undefined;
-                    break;
-                }
-            }
-          } else {
-            currentNode = nextNode;
-          }
-        } else {
-          currentNode = undefined;
-          break;
-        }
-      }
-    }
-    
-    if (!currentNode || !currentNode.children) {
+    if (!traversal.currentNode || !traversal.currentNode.children) {
+      // If we hit a redirect at the end, or no children found, return to top-level
       return this.getTopLevelCommands(commands, true, currentPart);
     }
     
-    const isPartial = currentPart !== '';
+    return this.getNodeSuggestions(traversal.currentNode, traversal.commandName, currentPart);
+  }
+
+  private traversePath(
+    commands: Map<string, ParsedCommand>,
+    parts: string[],
+    currentIndex: number
+  ): { currentNode: CommandNode | undefined; commandName: string } {
+    let commandName = parts[0] || '';
+    let currentNode: CommandNode | undefined;
     
-    for (const [name, node] of Object.entries(currentNode.children)) {
-      if (node.type === 'literal') {
-        if (isPartial && !name.toLowerCase().startsWith(currentPart.toLowerCase())) {
-          continue;
-        }
-        items.push({
-          label: name,
-          kind: CompletionKind.Keyword,
-          insertText: name + ' ',
-          command: commandName,
-        });
-      } else if (node.type === 'argument') {
-        const parser = node.parser || 'unknown';
-        
-        // Target Selector support
-        if (currentPart.startsWith('@') && parser.includes('entity')) {
-          const selectors = ['@p', '@a', '@r', '@e', '@s'];
-          for (const selector of selectors) {
-            if (selector.startsWith(currentPart)) {
-              items.push({
-                label: selector,
-                kind: CompletionKind.Variable,
-                insertText: selector + ' ',
-                command: commandName,
-              });
-            }
+    if (!commands.has(commandName)) {
+      return { currentNode: undefined, commandName };
+    }
+
+    currentNode = commands.get(commandName)!.node;
+    
+    for (let i = 1; i < currentIndex && currentNode; i++) {
+      const part = parts[i];
+      if (!part) break;
+      
+      const nextNode = this.findNextNode(currentNode, part);
+      
+      if (nextNode) {
+        if (this.isRedirect(nextNode, part)) {
+          const redirect = this.handleRedirect(commands, parts, i, currentIndex, nextNode);
+          if (redirect) {
+            currentNode = redirect.node;
+            commandName = redirect.name;
+            i = redirect.newIndex;
+          } else {
+            currentNode = undefined;
+            break;
           }
-          continue; // Don't show registry items if typing selector
+        } else {
+          currentNode = nextNode;
         }
-        
-        const suggestions = await this.getSuggestionsForParser(parser, node.properties);
-        
-        if (suggestions.length > 0) {
-          for (const suggestion of suggestions) {
-            if (isPartial && !suggestion.toLowerCase().startsWith(currentPart.toLowerCase())) {
-              continue;
-            }
-            items.push({
-              label: suggestion,
-              kind: this.getKindForParser(parser),
-              insertText: suggestion + ' ',
-              command: commandName,
-            });
-          }
-        } else if (!isPartial) {
+      } else {
+        currentNode = undefined;
+        break;
+      }
+    }
+
+    return { currentNode, commandName };
+  }
+
+  private findNextNode(currentNode: CommandNode, part: string): CommandNode | undefined {
+    if (currentNode.children && currentNode.children[part]) {
+      return currentNode.children[part];
+    } 
+    
+    if (currentNode.children) {
+      // Check literals first
+      for (const [childName, childNode] of Object.entries(currentNode.children)) {
+        if (childNode.type === NodeType.Literal && childName.toLowerCase().startsWith(part.toLowerCase())) {
+          return childNode;
+        }
+      }
+      
+      // Fallback to first argument node
+      return Object.values(currentNode.children).find(node => node.type === NodeType.Argument);
+    }
+
+    return undefined;
+  }
+
+  private isRedirect(node: CommandNode, part: string): boolean {
+    return !!node.redirect || (node.type === NodeType.Literal && part === COMMANDS.RUN);
+  }
+
+  private handleRedirect(
+    commands: Map<string, ParsedCommand>,
+    parts: string[],
+    i: number,
+    currentIndex: number,
+    node: CommandNode
+  ): { node: CommandNode; name: string; newIndex: number } | undefined {
+    const redirectTarget = node.redirect?.[0];
+    
+    if (redirectTarget && redirectTarget !== "" && commands.has(redirectTarget)) {
+        const targetCmd = commands.get(redirectTarget)!;
+        return { node: targetCmd.node, name: redirectTarget, newIndex: i };
+    }
+
+    // Redirect to global root (top-level commands)
+    const nextPart = parts[i + 1];
+    if (nextPart && commands.has(nextPart)) {
+        const targetCmd = commands.get(nextPart)!;
+        return { node: targetCmd.node, name: nextPart, newIndex: i + 1 };
+    }
+
+    return undefined;
+  }
+
+  private async getNodeSuggestions(
+    node: CommandNode,
+    commandName: string,
+    currentPart: string
+  ): Promise<CompletionItem[]> {
+    if (!node.children) return [];
+
+    const items: Promise<CompletionItem[]>[] = [];
+    const isPartial = currentPart !== '';
+
+    for (const [name, childNode] of Object.entries(node.children)) {
+      if (childNode.type === NodeType.Literal) {
+        items.push(Promise.resolve(this.getLiteralSuggestions(name, childNode, commandName, currentPart, isPartial)));
+      } else if (childNode.type === NodeType.Argument) {
+        items.push(this.getArgumentSuggestions(childNode, commandName, currentPart, isPartial));
+      }
+    }
+
+    const results = await Promise.all(items);
+    return results.flat().sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+  private getLiteralSuggestions(
+    name: string,
+    node: CommandNode,
+    commandName: string,
+    currentPart: string,
+    isPartial: boolean
+  ): CompletionItem[] {
+    if (isPartial && !name.toLowerCase().startsWith(currentPart.toLowerCase())) {
+      return [];
+    }
+    return [{
+      label: name,
+      kind: CompletionKind.Keyword,
+      insertText: name + ' ',
+      command: commandName,
+    }];
+  }
+
+  private async getArgumentSuggestions(
+    node: CommandNode,
+    commandName: string,
+    currentPart: string,
+    isPartial: boolean
+  ): Promise<CompletionItem[]> {
+    const parser = node.parser || 'unknown';
+    const items: CompletionItem[] = [];
+
+    // Target Selector support
+    if (currentPart.startsWith('@') && parser.includes('entity')) {
+      for (const selector of SELECTORS) {
+        if (selector.startsWith(currentPart)) {
           items.push({
-            label: `<${node.properties?.name || 'value'}>`,
+            label: selector,
             kind: CompletionKind.Variable,
-            detail: parser.replace('minecraft:', '').replace('brigadier:', ''),
-            insertText: '',
+            insertText: selector + ' ',
             command: commandName,
           });
         }
       }
+      return items;
     }
+
+    const suggestions = await this.getSuggestionsForParser(parser, node.properties);
     
-    return items.sort((a, b) => a.label.localeCompare(b.label));
+    if (suggestions.length > 0) {
+      for (const suggestion of suggestions) {
+        if (isPartial && !suggestion.toLowerCase().startsWith(currentPart.toLowerCase())) {
+          continue;
+        }
+        items.push({
+          label: suggestion,
+          kind: this.getKindForParser(parser),
+          insertText: suggestion + ' ',
+          command: commandName,
+        });
+      }
+    } else if (!isPartial) {
+      items.push({
+        label: `<${node.properties?.name || 'value'}>`,
+        kind: CompletionKind.Variable,
+        detail: parser.replace('minecraft:', '').replace('brigadier:', ''),
+        insertText: '',
+        command: commandName,
+      });
+    }
+
+    return items;
   }
 
   private getKindForParser(parser: string): CompletionKind {
@@ -385,7 +467,12 @@ export class CompletionProvider {
     }
 
     if (parser === 'minecraft:entity_summon') {
-      return this.loadRegistry('entity_type');
+      return this.loadRegistry(REGISTRIES.ENTITY_TYPE);
+    }
+
+    // Default hardcoded suggestions
+    if (PARSER_SUGGESTIONS[parser]) {
+        return PARSER_SUGGESTIONS[parser];
     }
 
     const registry = PARSER_REGISTRIES[parser];
@@ -422,7 +509,7 @@ export class CompletionProvider {
       this.cachedRegistries.set(name, entries);
       return entries;
     } catch (e) {
-      console.error(`Failed to load registry ${name}:`, e);
+      // Don't log if it's a known non-registry or offline
       return [];
     }
   }
@@ -437,7 +524,7 @@ export class CompletionProvider {
       
       if (data?.children) {
         for (const [name, node] of Object.entries(data.children)) {
-          if (node.type === 'literal') {
+          if (node.type === NodeType.Literal) {
             const description = this.getCommandDescription(name, node);
             this.cachedCommands.set(name, { name, description, node });
           }

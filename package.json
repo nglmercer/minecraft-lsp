@@ -4,7 +4,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "test": "bun test"
+    "test": "bun test",
+    "web": "bun --watch ./demo/index.html"
   },
   "devDependencies": {
     "@types/bun": "latest"
