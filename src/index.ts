@@ -8,3 +8,4 @@ export * from './core/HoverProvider';
 export * from './core/Types';
 export * from './core/Constants';
 export * from './components/MinecraftAutocomplete';
+export * from './components/MinecraftDiagnostics';

@@ -47,6 +47,9 @@ export class MinecraftAutocomplete extends LitElement {
   private diagnostics: Diagnostic[] = [];
 
   @state()
+  private ghostText = '';
+
+  @state()
   private selectedIndex = -1;
 
   @state()
@@ -68,14 +71,15 @@ export class MinecraftAutocomplete extends LitElement {
 
     .container {
       position: relative;
-      background: #1e1e1e;
+      background: rgba(30, 30, 30, 0.5);
+      backdrop-filter: blur(8px);
       border: 2px solid #333;
       border-radius: 8px;
       padding: 4px;
       display: flex;
       flex-direction: column;
       box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-      transition: border-color 0.2s ease;
+      transition: all 0.2s ease;
     }
 
     .container:focus-within {
@@ -99,6 +103,26 @@ export class MinecraftAutocomplete extends LitElement {
       outline: none;
       width: 100%;
       font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      position: relative;
+      z-index: 2;
+    }
+
+    .editor-layer {
+        position: relative;
+        width: 100%;
+    }
+
+    .ghost-text {
+        position: absolute;
+        top: 0;
+        left: 0;
+        padding: 8px;
+        font-size: 14px;
+        font-family: 'JetBrains Mono', 'Fira Code', monospace;
+        color: rgba(255, 255, 255, 0.3);
+        pointer-events: none;
+        white-space: pre;
+        z-index: 1;
     }
 
     .suggestions-list {
@@ -106,7 +130,8 @@ export class MinecraftAutocomplete extends LitElement {
       top: 100%;
       left: 0;
       right: 0;
-      background: #252526;
+      background: rgba(37, 37, 38, 0.85);
+      backdrop-filter: blur(12px);
       border: 1px solid #3c3c3c;
       border-top: none;
       max-height: 300px;
@@ -186,14 +211,6 @@ export class MinecraftAutocomplete extends LitElement {
       background: #1e1e1e;
     }
 
-    .diagnostics-container {
-      padding: 4px 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      border-top: 1px solid #333;
-    }
-
     .diagnostic-item {
       display: flex;
       align-items: flex-start;
@@ -234,29 +251,21 @@ export class MinecraftAutocomplete extends LitElement {
 
     return html`
       <div class="container ${worstSeverity === DiagnosticSeverity.Error ? 'has-error' : worstSeverity === DiagnosticSeverity.Warning ? 'has-warning' : ''}">
-        <input
-          id="input"
-          type="text"
-          .value="${this.value}"
-          placeholder="${this.placeholder}"
-          @input="${this.handleInput}"
-          @keydown="${this.handleKeyDown}"
-          @blur="${this.handleBlur}"
-          autocomplete="off"
-          spellcheck="false"
-        />
+        <div class="editor-layer">
+          <div class="ghost-text">${this.ghostText}</div>
+          <input
+            id="input"
+            type="text"
+            .value="${this.value}"
+            placeholder="${this.placeholder}"
+            @input="${() => this.handleInput()}"
+            @keydown="${this.handleKeyDown}"
+            @blur="${this.handleBlur}"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </div>
         
-        ${this.diagnostics.length > 0 ? html`
-          <div class="diagnostics-container">
-            ${this.diagnostics.map(d => html`
-              <div class="diagnostic-item ${this.getDiagClass(d.severity)}">
-                <span class="diag-icon">${this.getDiagIcon(d.severity)}</span>
-                <span class="diag-message">${d.message}</span>
-              </div>
-            `)}
-          </div>
-        ` : ''}
-
         <div class="suggestions-list ${this.showSuggestions && this.suggestions.length > 0 ? 'active' : ''}">
           ${this.suggestions.map((item, index) => html`
             <div
@@ -326,11 +335,11 @@ export class MinecraftAutocomplete extends LitElement {
     }
   }
 
-  private async handleInput(e: InputEvent) {
-    const target = e.target as HTMLInputElement;
-    this.value = target.value;
+  private async handleInput(e?: InputEvent) {
+    const value = this.inputElement?.value ?? this.value;
+    this.value = value;
     
-    const cursorPosition = target.selectionStart || 0;
+    const cursorPosition = this.inputElement?.selectionStart || 0;
 
     // Autocomplete
     if (this.provider && this.value.length > 0) {
@@ -339,13 +348,27 @@ export class MinecraftAutocomplete extends LitElement {
         character: cursorPosition,
         text: this.value,
         lineText: this.value,
-        triggerCharacter: e.data || undefined
+        triggerCharacter: e?.data || undefined
       };
 
       try {
         this.suggestions = await this.provider.getCompletions(context);
         this.showSuggestions = this.suggestions.length > 0;
         this.selectedIndex = this.suggestions.length > 0 ? 0 : -1;
+        
+        // Update ghost text
+        if (this.suggestions.length > 0 && this.suggestions[0]) {
+            const first = this.suggestions[0];
+            const label = typeof first.label === 'string' ? first.label : '';
+            const currentWord = this.value.substring(this.value.lastIndexOf(' ') + 1);
+            if (label.toLowerCase().startsWith(currentWord.toLowerCase())) {
+                this.ghostText = this.value + label.substring(currentWord.length);
+            } else {
+                this.ghostText = '';
+            }
+        } else {
+            this.ghostText = '';
+        }
       } catch (error) {
         console.error('Failed to get completions:', error);
         this.suggestions = [];
@@ -374,6 +397,15 @@ export class MinecraftAutocomplete extends LitElement {
 
     this.dispatchEvent(new CustomEvent('change', {
         detail: { value: this.value, diagnostics: this.diagnostics },
+        bubbles: true,
+        composed: true
+    }));
+
+    this.dispatchEvent(new CustomEvent('diagnostics-changed', {
+        detail: { 
+            diagnostics: this.diagnostics,
+            inputRect: this.inputElement?.getBoundingClientRect()
+        },
         bubbles: true,
         composed: true
     }));
@@ -435,7 +467,7 @@ export class MinecraftAutocomplete extends LitElement {
         setTimeout(() => {
           this.inputElement!.setSelectionRange(newCursorPos, newCursorPos);
           // Trigger input handler to refresh suggestions and validation
-          this.handleInput(new InputEvent('input') as any);
+          this.handleInput();
         }, 0);
     }
 
