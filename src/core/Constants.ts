@@ -21,7 +21,12 @@ export const REGISTRIES = {
     POTION: 'potion',
     ENCHANTMENT: 'enchantment',
     LOOT_TABLES: 'loot_tables',
-    RECIPES: 'recipes'
+    RECIPES: 'recipes',
+    GAMEMODE: 'gamemode',
+    DIFFICULTY: 'difficulty',
+    SLOT: 'slot',
+    OBJECTIVE: 'objective',
+    TEAM: 'team'
 };
 
 export const PARSER_REGISTRIES: Record<string, string> = {
@@ -39,6 +44,11 @@ export const PARSER_REGISTRIES: Record<string, string> = {
   'minecraft:sound': REGISTRIES.SOUND_EVENT,
   'minecraft:potion': REGISTRIES.POTION,
   'minecraft:enchantment': REGISTRIES.ENCHANTMENT,
+  'minecraft:entity_anchor': 'entity_anchor',
+  'minecraft:item_slot': REGISTRIES.SLOT,
+  'minecraft:objective': REGISTRIES.OBJECTIVE,
+  'minecraft:team': REGISTRIES.TEAM,
+  'minecraft:gamemode': REGISTRIES.GAMEMODE,
 };
 
 export const PARSER_SUGGESTIONS: Record<string, string[]> = {
@@ -52,4 +62,9 @@ export const PARSER_SUGGESTIONS: Record<string, string[]> = {
   'minecraft:entity_anchor': ['eyes', 'feet'],
   'minecraft:swizzle': ['x', 'y', 'z', 'xy', 'xz', 'yz', 'xyz'],
   'minecraft:operation': ['=', '+=', '-=', '*=', '/=', '%=', '<', '>', '><'],
+  'minecraft:gamemode': ['survival', 'creative', 'adventure', 'spectator'],
+  'minecraft:difficulty': ['peaceful', 'easy', 'normal', 'hard'],
+  'minecraft:time': ['day', 'night', 'noon', 'midnight', '1000', '6000', '12000', '18000'],
+  'minecraft:scoreboard_slot': ['list', 'sidebar', 'belowName', 'sidebar.team.red', 'sidebar.team.blue'],
+  'minecraft:color': ['white', 'orange', 'magenta', 'light_blue', 'yellow', 'lime', 'pink', 'gray', 'light_gray', 'cyan', 'purple', 'blue', 'brown', 'green', 'red', 'black'],
 };

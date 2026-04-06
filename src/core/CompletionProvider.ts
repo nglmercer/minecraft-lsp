@@ -216,11 +216,19 @@ export class CompletionProvider {
     currentIndex: number,
     node: CommandNode
   ): { node: CommandNode; name: string; newIndex: number } | undefined {
-    const redirectTarget = node.redirect?.[0];
-    
-    if (redirectTarget && redirectTarget !== "" && commands.has(redirectTarget)) {
-        const targetCmd = commands.get(redirectTarget)!;
-        return { node: targetCmd.node, name: redirectTarget, newIndex: i };
+    if (node.redirect && node.redirect.length > 0) {
+        const rootName = node.redirect[0]!;
+        const targetCmd = commands.get(rootName);
+        if (targetCmd) {
+            let current = targetCmd.node;
+            for (let j = 1; j < node.redirect.length && current; j++) {
+                const nextKey = node.redirect[j]!;
+                current = current.children?.[nextKey] as CommandNode;
+            }
+            if (current) {
+                return { node: current, name: rootName, newIndex: i };
+            }
+        }
     }
 
     const nextPart = parts[i + 1];
@@ -281,9 +289,11 @@ export class CompletionProvider {
     const parser = node.parser || 'unknown';
     const items: CompletionItem[] = [];
 
-    if (currentPart.startsWith('@') && parser.includes('entity')) {
+    const isEntity = parser.includes('entity');
+    
+    if (isEntity) {
       for (const selector of SELECTORS) {
-        if (selector.startsWith(currentPart)) {
+        if (!isPartial || selector.startsWith(currentPart)) {
           items.push({
             label: selector,
             kind: CompletionKind.Variable,
@@ -292,7 +302,9 @@ export class CompletionProvider {
           });
         }
       }
-      return items;
+      
+      // If we already matched a selector and it's not partial, we can return early or keep going
+      // Usually we want to show BOTH selectors and entities
     }
 
     const suggestions = await this.getSuggestionsForParser(parser, node.properties);

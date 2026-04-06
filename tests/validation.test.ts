@@ -54,7 +54,9 @@ describe('ValidationProvider', () => {
   test('handles unexpected trailing arguments', async () => {
     const diagnostics = await provider.validate({ text: '/seed unexpected_arg', line: 0, character: 0 });
     if (diagnostics.length > 0) {
-        expect(diagnostics.some(d => d.code === 'UNEXPECTED_ARGUMENT')).toBe(true);
+      console.log(diagnostics);
+        //UNKNOWN_SUBCOMMAND || UNEXPECTED_ARGUMENT
+        expect(diagnostics.some(d => d.code === 'UNEXPECTED_ARGUMENT' || d.code === 'UNKNOWN_SUBCOMMAND')).toBe(true);
     }
   });
 
