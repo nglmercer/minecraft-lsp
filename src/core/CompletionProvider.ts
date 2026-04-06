@@ -166,6 +166,16 @@ export class CompletionProvider {
     const currentIndex = rawParts.length - 1;
     const currentPart = rawParts[currentIndex] || '';
     
+    // If we're at the very beginning and there's no slash, this is probably not a command context
+    if (currentIndex === 0 && !textBeforeCursor.startsWith('/')) {
+        return {
+          type: 'none',
+          parts: [],
+          currentIndex: 0,
+          currentPart: ''
+        };
+    }
+    
     return {
       type: 'command',
       parts: parts,
@@ -182,16 +192,23 @@ export class CompletionProvider {
     const { parts, currentIndex, currentPart } = analysis;
     
     if (currentIndex === 0) {
-      return this.findMatchingCommands(commands, parts, currentPart);
+      return this.getTopLevelCommands(commands, false, currentPart);
     }
     
     return this.getSubCommandCompletions(commands, parts, currentIndex, currentPart);
   }
 
-  private getTopLevelCommands(commands: Map<string, ParsedCommand>, omitSlash: boolean = false): CompletionItem[] {
+  private getTopLevelCommands(
+    commands: Map<string, ParsedCommand>, 
+    omitSlash: boolean = false,
+    filter: string = ''
+  ): CompletionItem[] {
     const items: CompletionItem[] = [];
     
     for (const [name, cmd] of commands) {
+      if (filter && !name.toLowerCase().startsWith(filter.toLowerCase())) {
+        continue;
+      }
       items.push({
         label: (omitSlash ? '' : '/') + name,
         kind: CompletionKind.Function,
@@ -248,8 +265,8 @@ export class CompletionProvider {
                 // Since we're jumping to index i+1, we increment i.
                 i++;
             } else if (i === currentIndex - 1) {
-                // Return top-level commands if we just hit a redirect at the end
-                return this.getTopLevelCommands(commands, true);
+                // Return filtered top-level commands if we just hit a redirect at the end
+                return this.getTopLevelCommands(commands, true, currentPart);
             } else {
                 // If the next word isn't a command, break
                 currentNode = undefined;
@@ -266,8 +283,7 @@ export class CompletionProvider {
     }
     
     if (!currentNode || !currentNode.children) {
-      const matchingCommands = this.findMatchingCommands(commands, parts, currentPart);
-      return matchingCommands;
+      return this.getTopLevelCommands(commands, true, currentPart);
     }
     
     const isPartial = currentPart !== '';
@@ -329,28 +345,6 @@ export class CompletionProvider {
     }
     
     return items.sort((a, b) => a.label.localeCompare(b.label));
-  }
-
-  private findMatchingCommands(
-    commands: Map<string, ParsedCommand>,
-    parts: string[],
-    currentPart: string
-  ): CompletionItem[] {
-    const items: CompletionItem[] = [];
-    
-    for (const [name, cmd] of commands) {
-      if (name.toLowerCase().startsWith(currentPart.toLowerCase())) {
-        items.push({
-          label: name,
-          kind: CompletionKind.Function,
-          detail: cmd.description,
-          insertText: name + ' ',
-          command: name,
-        });
-      }
-    }
-    
-    return items;
   }
 
   private getKindForParser(parser: string): CompletionKind {

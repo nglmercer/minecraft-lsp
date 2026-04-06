@@ -6,7 +6,10 @@ describe('RegistryProvider', () => {
   let provider: RegistryProvider;
 
   beforeEach(() => {
-    provider = new RegistryProvider({ cacheProvider: new MemoryCache() });
+    provider = new RegistryProvider({ 
+      cacheProvider: new MemoryCache(),
+      baseUrl: 'http://invalid.url' // Use invalid URL to ensure network failure tests pass as expected
+    });
   });
 
   test('returns empty array when network fails', async () => {

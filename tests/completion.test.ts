@@ -12,7 +12,7 @@ describe('CompletionProvider', () => {
   test('returns command completions starting with /', async () => {
     const context: CompletionContext = {
       line: 0,
-      character: 0,
+      character: 1,
       text: '/',
       lineText: '/',
     };
@@ -24,7 +24,7 @@ describe('CompletionProvider', () => {
   test('filters completions by prefix', async () => {
     const context: CompletionContext = {
       line: 0,
-      character: 0,
+      character: 5,
       text: '/give',
       lineText: '/give',
     };
@@ -47,7 +47,7 @@ describe('CompletionProvider', () => {
     await provider.clearCache();
     const context: CompletionContext = {
       line: 0,
-      character: 0,
+      character: 1,
       text: '/',
       lineText: '/',
     };
@@ -58,7 +58,7 @@ describe('CompletionProvider', () => {
   test('returns subcommand completions after command name', async () => {
     const context: CompletionContext = {
       line: 0,
-      character: 0,
+      character: 6,
       text: '/give ',
       lineText: '/give ',
     };
@@ -69,7 +69,7 @@ describe('CompletionProvider', () => {
   test('returns title subcommands', async () => {
     const context: CompletionContext = {
       line: 0,
-      character: 0,
+      character: 7,
       text: '/title ',
       lineText: '/title ',
     };
@@ -80,7 +80,7 @@ describe('CompletionProvider', () => {
   test('returns effect subcommands', async () => {
     const context: CompletionContext = {
       line: 0,
-      character: 0,
+      character: 8,
       text: '/effect ',
       lineText: '/effect ',
     };

@@ -12,7 +12,7 @@ describe('CompletionProvider - Execute Commands', () => {
   test('returns execute subcommands', async () => {
     const context: CompletionContext = {
       line: 0,
-      character: 0,
+      character: 9,
       text: '/execute ',
       lineText: '/execute ',
     };
@@ -26,7 +26,7 @@ describe('CompletionProvider - Execute Commands', () => {
   test('returns execute if subcommands', async () => {
     const context: CompletionContext = {
       line: 0,
-      character: 0,
+      character: 11,
       text: '/execute if',
       lineText: '/execute if',
     };
@@ -37,7 +37,7 @@ describe('CompletionProvider - Execute Commands', () => {
   test('returns execute as subcommands', async () => {
     const context: CompletionContext = {
       line: 0,
-      character: 0,
+      character: 12,
       text: '/execute as ',
       lineText: '/execute as ',
     };
@@ -48,7 +48,7 @@ describe('CompletionProvider - Execute Commands', () => {
   test('execute nested conditionals', async () => {
     const context: CompletionContext = {
       line: 0,
-      character: 0,
+      character: 19,
       text: '/execute if entity ',
       lineText: '/execute if entity ',
     };
@@ -67,7 +67,7 @@ describe('CompletionProvider - Array Commands', () => {
   test('returns bossbar subcommands', async () => {
     const context: CompletionContext = {
       line: 0,
-      character: 0,
+      character: 9,
       text: '/bossbar ',
       lineText: '/bossbar ',
     };
@@ -80,7 +80,7 @@ describe('CompletionProvider - Array Commands', () => {
   test('returns team subcommands', async () => {
     const context: CompletionContext = {
       line: 0,
-      character: 0,
+      character: 6,
       text: '/team ',
       lineText: '/team ',
     };
@@ -91,7 +91,7 @@ describe('CompletionProvider - Array Commands', () => {
   test('returns scoreboard subcommands', async () => {
     const context: CompletionContext = {
       line: 0,
-      character: 0,
+      character: 12,
       text: '/scoreboard ',
       lineText: '/scoreboard ',
     };
@@ -102,7 +102,7 @@ describe('CompletionProvider - Array Commands', () => {
   test('returns data subcommands', async () => {
     const context: CompletionContext = {
       line: 0,
-      character: 0,
+      character: 6,
       text: '/data ',
       lineText: '/data ',
     };
