@@ -8,7 +8,7 @@ import {
   type CommandNode, 
   type ParsedCommand 
 } from './Types';
-import { REGISTRIES, SELECTORS, COMMANDS, PARSER_SUGGESTIONS, PARSER_REGISTRIES } from './Constants';
+import { REGISTRIES, SELECTORS, COMMANDS, PARSER_SUGGESTIONS, PARSER_REGISTRIES, COMMAND_DESCRIPTIONS, PARSERS, BRIGADIE_PARSERS, PARSER_KINDS } from './Constants';
 import { validateArgument } from './Utils';
 
 export interface CompletionOptions {
@@ -17,12 +17,17 @@ export interface CompletionOptions {
   version?: string;
 }
 
-export const AnalysisType = {
-  None: 'none',
-  Command: 'command',
-} as const;
+export interface ContextAnalysis {
+  type: AnalysisType;
+  parts: string[];
+  currentIndex: number;
+  currentPart: string;
+}
 
-export type AnalysisType = typeof AnalysisType[keyof typeof AnalysisType];
+export enum AnalysisType {
+  None = 'none',
+  Command = 'command',
+}
 
 export interface ContextAnalysis {
   type: AnalysisType;
@@ -393,21 +398,21 @@ export class CompletionProvider {
   }
 
   private getTokensConsumed(parser: string, properties?: Record<string, any>, remaining?: number): number {
-    if (parser === 'minecraft:vec3' || parser === 'minecraft:block_pos') return 3;
-    if (parser === 'minecraft:vec2' || parser === 'minecraft:rotation' || parser === 'minecraft:column_pos') return 2;
-    if (parser === 'minecraft:message' || (parser === 'brigadier:string' && properties?.type === 'greedy')) {
+    if (parser === PARSERS.VEC3 || parser === PARSERS.BLOCK_POS) return 3;
+    if (parser === PARSERS.VEC2 || parser === PARSERS.ROTATION || parser === PARSERS.COLUMN_POS) return 2;
+    if (parser === PARSERS.MESSAGE || (parser === BRIGADIE_PARSERS.STRING && properties?.type === 'greedy')) {
         return remaining || 1;
     }
     return 1;
   }
 
   private getKindForParser(parser: string): CompletionKind {
-    if (parser.includes('entity')) return CompletionKind.Reference;
-    if (parser.includes('item')) return CompletionKind.Value;
-    if (parser.includes('block')) return CompletionKind.Struct;
-    if (parser.includes('sound')) return CompletionKind.Event;
-    if (parser.includes('potion') || parser.includes('effect')) return CompletionKind.Enum;
-    if (parser.includes('enchantment')) return CompletionKind.EnumMember;
+    if (parser.includes(PARSER_KINDS.ENTITY)) return CompletionKind.Reference;
+    if (parser.includes(PARSER_KINDS.ITEM)) return CompletionKind.Value;
+    if (parser.includes(PARSER_KINDS.BLOCK)) return CompletionKind.Struct;
+    if (parser.includes(PARSER_KINDS.SOUND)) return CompletionKind.Event;
+    if (parser.includes(PARSER_KINDS.POTION) || parser.includes(PARSER_KINDS.EFFECT)) return CompletionKind.Enum;
+    if (parser.includes(PARSER_KINDS.ENCHANTMENT)) return CompletionKind.EnumMember;
     return CompletionKind.Variable;
   }
 
@@ -416,7 +421,7 @@ export class CompletionProvider {
       return this.loadRegistry(properties.registry.replace('minecraft:', ''));
     }
 
-    if (parser === 'minecraft:entity_summon') {
+    if (parser === PARSERS.ENTITY_SUMMON) {
       return this.loadRegistry(REGISTRIES.ENTITY_TYPE);
     }
 
@@ -485,39 +490,7 @@ export class CompletionProvider {
   }
 
   private getCommandDescription(name: string, node: CommandNode): string {
-    const descriptions: Record<string, string> = {
-      'give': 'Give items to players',
-      'take': 'Take items from players',
-      'tell': 'Send a message to a player',
-      'msg': 'Send a private message',
-      'w': 'Send a private message',
-      'title': 'Display titles to players',
-      'effect': 'Give or remove effects',
-      'enchant': 'Enchant items',
-      'execute': 'Execute a command conditionally',
-      'fill': 'Fill an area with blocks',
-      'setblock': 'Set a block',
-      'clone': 'Clone blocks',
-      'summon': 'Summon entities',
-      'kill': 'Kill entities',
-      'clear': 'Clear items from inventory',
-      'spawnpoint': 'Set spawn point',
-      'gamerule': 'Set game rules',
-      'difficulty': 'Set game difficulty',
-      'time': 'Change the time',
-      'weather': 'Set weather',
-      'tp': 'Teleport entities',
-      'teleport': 'Teleport entities',
-      'particle': 'Spawn particles',
-      'playsound': 'Play a sound',
-      'stopsound': 'Stop sounds',
-      'data': 'Modify NBT data',
-      'scoreboard': 'Manage scoreboard',
-      'team': 'Manage teams',
-      'trigger': 'Trigger objectives',
-    };
-    
-    return descriptions[name] || `/${name} command`;
+    return COMMAND_DESCRIPTIONS[name] || `/${name} command`;
   }
 
   async clearCache(): Promise<void> {

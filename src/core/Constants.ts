@@ -68,3 +68,62 @@ export const PARSER_SUGGESTIONS: Record<string, string[]> = {
   'minecraft:scoreboard_slot': ['list', 'sidebar', 'belowName', 'sidebar.team.red', 'sidebar.team.blue'],
   'minecraft:color': ['white', 'orange', 'magenta', 'light_blue', 'yellow', 'lime', 'pink', 'gray', 'light_gray', 'cyan', 'purple', 'blue', 'brown', 'green', 'red', 'black'],
 };
+
+export const PARSERS = {
+  VEC3: 'minecraft:vec3',
+  VEC2: 'minecraft:vec2',
+  BLOCK_POS: 'minecraft:block_pos',
+  ROTATION: 'minecraft:rotation',
+  COLUMN_POS: 'minecraft:column_pos',
+  MESSAGE: 'minecraft:message',
+  ENTITY_SUMMON: 'minecraft:entity_summon',
+};
+
+export const BRIGADIE_PARSERS = {
+  STRING: 'brigadier:string',
+  BOOL: 'brigadier:bool',
+  FLOAT: 'brigadier:float',
+  INTEGER: 'brigadier:integer',
+};
+
+export const PARSER_KINDS = {
+  ENTITY: 'entity',
+  ITEM: 'item',
+  BLOCK: 'block',
+  SOUND: 'sound',
+  POTION: 'potion',
+  EFFECT: 'effect',
+  ENCHANTMENT: 'enchantment',
+};
+
+export const COMMAND_DESCRIPTIONS: Record<string, string> = {
+  'give': 'Give items to players',
+  'take': 'Take items from players',
+  'tell': 'Send a message to a player',
+  'msg': 'Send a private message',
+  'w': 'Send a private message',
+  'title': 'Display titles to players',
+  'effect': 'Give or remove effects',
+  'enchant': 'Enchant items',
+  'execute': 'Execute a command conditionally',
+  'fill': 'Fill an area with blocks',
+  'setblock': 'Set a block',
+  'clone': 'Clone blocks',
+  'summon': 'Summon entities',
+  'kill': 'Kill entities',
+  'clear': 'Clear items from inventory',
+  'spawnpoint': 'Set spawn point',
+  'gamerule': 'Set game rules',
+  'difficulty': 'Set game difficulty',
+  'time': 'Change the time',
+  'weather': 'Set weather',
+  'tp': 'Teleport entities',
+  'teleport': 'Teleport entities',
+  'particle': 'Spawn particles',
+  'playsound': 'Play a sound',
+  'stopsound': 'Stop sounds',
+  'data': 'Modify NBT data',
+  'scoreboard': 'Manage scoreboard',
+  'team': 'Manage teams',
+  'trigger': 'Trigger objectives',
+};
