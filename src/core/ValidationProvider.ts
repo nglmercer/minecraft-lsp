@@ -1,12 +1,13 @@
 import { type CacheProvider } from './Cache';
-import { DataFetcher } from './Fetcher';
 import { 
   type Diagnostic, 
   DiagnosticSeverity, 
   NodeType, 
-  type CommandNode 
+  type CommandNode, 
+  type ParsedCommand
 } from './Types';
 import { validateArgument } from './Utils';
+import { CommandTreeService } from './CommandTree';
 
 export interface ValidationContext {
   text: string;
@@ -27,11 +28,10 @@ interface Token {
 }
 
 export class ValidationProvider {
-  private fetcher: DataFetcher;
-  private commandTree: Map<string, CommandNode> = new Map();
+  private commandTree: CommandTreeService;
 
   constructor(options: ValidationOptions = {}) {
-    this.fetcher = new DataFetcher({
+    this.commandTree = new CommandTreeService({
       cacheProvider: options.cacheProvider,
       baseUrl: options.baseUrl,
       version: options.version || 'summary',
@@ -55,9 +55,9 @@ export class ValidationProvider {
     if (!firstToken) return diagnostics;
 
     const commandName = firstToken.text;
-    const validCommands = await this.loadCommands();
+    const commands = await this.commandTree.loadCommands();
     
-    if (!validCommands.has(commandName)) {
+    if (!commands.has(commandName)) {
       diagnostics.push({
         range: {
           start: { line: context.line, character: firstToken.start },
@@ -70,29 +70,29 @@ export class ValidationProvider {
       return diagnostics;
     }
     
-    let currentNode: CommandNode | undefined = validCommands.get(commandName);
+    let currentNode: CommandNode | undefined = commands.get(commandName)!.node;
     let currentCommandName = commandName;
 
     // Follow redirect if the root node itself is a redirect (e.g., 'tp' -> 'teleport')
-    if (currentNode && currentNode.redirect) {
-        const redirect = this.handleRedirect(validCommands, tokens, 0, currentNode);
-        if (redirect) {
-            currentNode = redirect.node;
-            currentCommandName = redirect.name;
-        }
+    if (currentNode?.redirect) {
+      const redirect = CommandTreeService.resolveRedirectPath(commands, currentNode);
+      if (redirect) {
+        currentNode = redirect.node;
+        currentCommandName = redirect.name;
+      }
     }
 
     for (let i = 1; i < tokens.length && currentNode; i++) {
         const token = tokens[i];
         if (!token) break;
         
-        let nextNode: CommandNode | undefined = this.findNextNode(currentNode, token.text);
+        let nextNode: CommandNode | undefined = CommandTreeService.findNextNode(currentNode, token.text, 'exact');
 
         if (nextNode) {
-            const isRedirect = this.isRedirect(nextNode, token.text);
+            const isRedirect = CommandTreeService.isRedirect(nextNode, token.text);
             
             if (nextNode.type === NodeType.Argument && nextNode.parser) {
-                const consumed = this.getTokensConsumed(nextNode.parser, nextNode.properties, tokens.length - i);
+                const consumed = CommandTreeService.getTokensConsumed(nextNode.parser, nextNode.properties, tokens.length - i);
                 const argTokens = tokens.slice(i, i + consumed);
                 
                 if (argTokens.length > 0) {
@@ -121,7 +121,7 @@ export class ValidationProvider {
             }
 
             if (isRedirect) {
-                const redirect = this.handleRedirect(validCommands, tokens, i, currentNode);
+                const redirect = this.handleRedirect(commands, tokens, i, currentNode);
                 if (redirect) {
                     currentNode = redirect.node;
                     currentCommandName = redirect.name;
@@ -236,81 +236,28 @@ export class ValidationProvider {
     return tokens;
   }
 
-  private findNextNode(currentNode: CommandNode, part: string): CommandNode | undefined {
-    if (currentNode.children && currentNode.children[part]) {
-      return currentNode.children[part];
-    } 
-    
-    if (currentNode.children) {
-      // Case-insensitive literal check
-      for (const [childName, childNode] of Object.entries(currentNode.children)) {
-        if (childNode.type === NodeType.Literal && childName.toLowerCase() === part.toLowerCase()) {
-          return childNode;
-        }
-      }
-      
-      // Try all arguments until one validates
-      for (const node of Object.values(currentNode.children)) {
-        if (node.type === NodeType.Argument) {
-          if (validateArgument(part, node).isValid) {
-            return node;
-          }
-        }
-      }
-    }
-
-    return undefined;
-  }
-
-  private isRedirect(node: CommandNode, part: string): boolean {
-    return !!node.redirect || (node.type === NodeType.Literal && part === 'run');
-  }
-
+  /**
+   * Handle redirect for validation - uses shared resolveRedirectPath,
+   * with a fallback to check if the next token is a known command name.
+   */
   private handleRedirect(
-    commands: Map<string, CommandNode>,
+    commands: Map<string, ParsedCommand>,
     tokens: Token[],
     i: number,
     node: CommandNode
   ): { node: CommandNode; name: string } | undefined {
-    const redirect = node.redirect as any;
-    if (redirect) {
-        const path = Array.isArray(redirect) ? redirect : [redirect];
-        const rootName = path[0];
-        const targetCmd = commands.get(rootName);
-        if (targetCmd) {
-            let current = targetCmd;
-            for (let j = 1; j < path.length && current; j++) {
-                const nextKey = path[j];
-                current = current.children?.[nextKey] as CommandNode;
-            }
-            if (current) {
-                return { node: current, name: rootName };
-            }
-        }
-    }
+    // Try the explicit redirect path first
+    const redirect = CommandTreeService.resolveRedirectPath(commands, node);
+    if (redirect) return redirect;
 
-    // Special case for 'run' in execute
+    // Fallback: check if next token is a command name (e.g., 'run summon')
     const nextToken = tokens[i + 1];
-    if (nextToken && commands.has(nextToken.text)) {
-        const targetNode = commands.get(nextToken.text);
-        if (targetNode) {
-            return { node: targetNode, name: nextToken.text };
-        }
+    if (nextToken) {
+      return CommandTreeService.findCommandByName(commands, nextToken.text);
     }
 
     return undefined;
   }
-
-  private getTokensConsumed(parser: string, properties?: Record<string, any>, remaining?: number): number {
-    if (parser === 'minecraft:vec3' || parser === 'minecraft:block_pos') return 3;
-    if (parser === 'minecraft:vec2' || parser === 'minecraft:rotation' || parser === 'minecraft:column_pos') return 2;
-    if (parser === 'minecraft:message' || (parser === 'brigadier:string' && properties?.type === 'greedy')) {
-        return remaining || 1;
-    }
-    return 1;
-  }
-
-
 
   private getMissingArguments(node: CommandNode): string[] {
     const missing: string[] = [];
@@ -335,30 +282,7 @@ export class ValidationProvider {
     return missing;
   }
 
-  private async loadCommands(): Promise<Map<string, CommandNode>> {
-    if (this.commandTree.size > 0) {
-      return this.commandTree;
-    }
-    
-    try {
-      const data = await this.fetcher.fetch<CommandNode>('commands/data.json');
-      
-      if (data?.children) {
-        for (const [name, node] of Object.entries(data.children)) {
-          if (node.type === NodeType.Literal) {
-            this.commandTree.set(name, node);
-          }
-        }
-      }
-    } catch {
-      // Return empty map
-    }
-    
-    return this.commandTree;
-  }
-
   async clearCache(): Promise<void> {
-    this.commandTree.clear();
-    await this.fetcher.clearCache();
+    await this.commandTree.clearCache();
   }
 }

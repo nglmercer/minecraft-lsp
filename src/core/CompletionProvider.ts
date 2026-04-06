@@ -8,8 +8,8 @@ import {
   type CommandNode, 
   type ParsedCommand 
 } from './Types';
-import { REGISTRIES, SELECTORS, COMMANDS, PARSER_SUGGESTIONS, PARSER_REGISTRIES, COMMAND_DESCRIPTIONS, PARSERS, BRIGADIE_PARSERS, PARSER_KINDS, ENTITY_PARSERS } from './Constants';
-import { validateArgument } from './Utils';
+import { REGISTRIES, SELECTORS, PARSERS, PARSER_SUGGESTIONS, PARSER_REGISTRIES, PARSER_KINDS, ENTITY_PARSERS } from './Constants';
+import { CommandTreeService } from './CommandTree';
 
 export interface CompletionOptions {
   cacheProvider?: CacheProvider;
@@ -29,33 +29,22 @@ export enum AnalysisType {
   Command = 'command',
 }
 
-export interface ContextAnalysis {
-  type: AnalysisType;
-  parts: string[];
-  currentIndex: number;
-  currentPart: string;
-}
-
 export class CompletionProvider {
-  private fetcher: DataFetcher;
-  private registryFetcher: DataFetcher; 
-  private cachedCommands: Map<string, ParsedCommand> = new Map();
+  private commandTree: CommandTreeService;
+  private registryFetcher: DataFetcher;
   private cachedRegistries: Map<string, string[]> = new Map();
-  private version: string;
 
   constructor(options: CompletionOptions = {}) {
-    this.version = options.version || 'summary';
-    this.fetcher = new DataFetcher({
+    this.commandTree = new CommandTreeService({
       cacheProvider: options.cacheProvider,
       baseUrl: options.baseUrl,
-      version: this.version,
+      version: options.version,
     });
-    
-    // Add a dedicated fetcher for registries using the registries branch
+
     this.registryFetcher = new DataFetcher({
-        cacheProvider: options.cacheProvider,
-        baseUrl: options.baseUrl,
-        version: 'registries'
+      cacheProvider: options.cacheProvider,
+      baseUrl: options.baseUrl,
+      version: 'registries',
     });
   }
 
@@ -103,7 +92,7 @@ export class CompletionProvider {
     analysis: ContextAnalysis
   ): Promise<CompletionItem[]> {
     console.log(`getCommandCompletions: text="${context.lineText}", currentIndex=${analysis.currentIndex}, currentPart="${analysis.currentPart}"`);
-    const commands = await this.loadCommandTree();
+    const commands = await this.commandTree.loadCommands();
     const { parts, currentIndex, currentPart } = analysis;
     
     if (currentIndex === 0) {
@@ -168,32 +157,43 @@ export class CompletionProvider {
     currentNode = commands.get(commandName)!.node;
     
     // Follow redirect if the root node itself is a redirect
-    if (currentNode && currentNode.redirect) {
-        const redirect = this.handleRedirect(commands, parts, 0, currentIndex, currentNode);
-        if (redirect) {
-            currentNode = redirect.node;
-            commandName = redirect.name;
-        }
+    if (currentNode?.redirect) {
+      const redirect = CommandTreeService.resolveRedirectPath(commands, currentNode);
+      if (redirect) {
+        currentNode = redirect.node;
+        commandName = redirect.name;
+      }
     }
     
     for (let i = 1; i < currentIndex && currentNode; i++) {
       const part = parts[i] || '';
-      const nextNode = this.findNextNode(currentNode, part);
+      const nextNode = CommandTreeService.findNextNode(currentNode, part, 'prefix');
       
       if (nextNode) {
-        if (this.isRedirect(nextNode, part)) {
-          const redirect = this.handleRedirect(commands, parts, i, currentIndex, nextNode);
+        if (CommandTreeService.isRedirect(nextNode, part)) {
+          const redirect = CommandTreeService.resolveRedirectPath(commands, nextNode);
           if (redirect) {
             currentNode = redirect.node;
             commandName = redirect.name;
-            i = redirect.newIndex;
-          } else if (part === 'run' || nextNode.redirect?.[0] === 'execute') {
-            // It directed to root or back to execute, if nothing followed, return undefined to trigger top-level
-            return undefined;
+          } else {
+            // Fallback: check if next part is a command name
+            const nextPart = parts[i + 1];
+            if (nextPart) {
+              const cmd = CommandTreeService.findCommandByName(commands, nextPart);
+              if (cmd) {
+                currentNode = cmd.node;
+                commandName = cmd.name;
+                i++;
+              } else if (part === 'run' || nextNode.redirect?.[0] === 'execute') {
+                return undefined;
+              }
+            } else if (part === 'run' || nextNode.redirect?.[0] === 'execute') {
+              return undefined;
+            }
           }
         } else {
             if (nextNode.type === NodeType.Argument && nextNode.parser) {
-                const consumed = this.getTokensConsumed(nextNode.parser, nextNode.properties, parts.length - i);
+                const consumed = CommandTreeService.getTokensConsumed(nextNode.parser, nextNode.properties, parts.length - i);
                 i += consumed - 1;
                 currentNode = nextNode;
             } else {
@@ -209,92 +209,17 @@ export class CompletionProvider {
     return currentNode ? { currentNode, commandName } : undefined;
   }
 
-  private findNextNode(currentNode: CommandNode, part: string): CommandNode | undefined {
-    if (currentNode.children && currentNode.children[part]) {
-      return currentNode.children[part];
-    } 
-    
-    if (currentNode.children) {
-      for (const [childName, childNode] of Object.entries(currentNode.children)) {
-        if (childNode.type === NodeType.Literal && childName.toLowerCase().startsWith(part.toLowerCase())) {
-          return childNode;
-        }
-      }
-      
-      // Try all arguments until one validates
-      for (const node of Object.values(currentNode.children)) {
-        if (node.type === NodeType.Argument) {
-          if (validateArgument(part, node).isValid) {
-            return node;
-          }
-        }
-      }
-    }
-
-    return undefined;
-  }
-
-  private isRedirect(node: CommandNode, part: string): boolean {
-    return !!node.redirect || (node.type === NodeType.Literal && part === COMMANDS.RUN);
-  }
-
-  private handleRedirect(
-    commands: Map<string, ParsedCommand>,
-    parts: string[],
-    i: number,
-    currentIndex: number,
-    node: CommandNode
-  ): { node: CommandNode; name: string; newIndex: number } | undefined {
-    const redirect = node.redirect as any;
-    if (redirect) {
-        const path = Array.isArray(redirect) ? redirect : [redirect];
-        const rootName = path[0];
-        const targetCmd = commands.get(rootName);
-        if (targetCmd) {
-            let current = targetCmd.node;
-            for (let j = 1; j < path.length && current; j++) {
-                const nextKey = path[j];
-                current = current.children?.[nextKey] as CommandNode;
-            }
-            if (current) {
-                return { node: current, name: rootName, newIndex: i };
-            }
-        }
-    }
-
-    const nextPart = parts[i + 1];
-    if (nextPart && commands.has(nextPart)) {
-        const targetCmd = commands.get(nextPart)!;
-        return { node: targetCmd.node, name: nextPart, newIndex: i + 1 };
-    }
-
-    // Default: if it's a redirect to root (like 'run' at the end of parts)
-    return undefined;
-  }
-
   private async getNodeSuggestions(
     node: CommandNode,
     commandName: string,
     currentPart: string
   ): Promise<CompletionItem[]> {
-    const redirect = node.redirect as any;
-    if (redirect) {
-        const path = Array.isArray(redirect) ? redirect : [redirect];
-        const rootName = path[0];
-        
-        // We need to get the tree from the provider's commands map
-        const commands = await this.loadCommandTree();
-        const targetCmd = commands.get(rootName);
-        if (targetCmd) {
-            let current = targetCmd.node;
-            for (let j = 1; j < path.length && current; j++) {
-                const nextKey = path[j];
-                current = current.children?.[nextKey] as CommandNode;
-            }
-            if (current) {
-                return this.getNodeSuggestions(current, commandName, currentPart);
-            }
-        }
+    if (node.redirect) {
+      const commands = await this.commandTree.loadCommands();
+      const redirect = CommandTreeService.resolveRedirectPath(commands, node);
+      if (redirect) {
+        return this.getNodeSuggestions(redirect.node, commandName, currentPart);
+      }
     }
 
     if (!node.children) return [];
@@ -318,7 +243,7 @@ export class CompletionProvider {
 
   private getLiteralSuggestions(
     name: string,
-    node: CommandNode,
+    _node: CommandNode,
     commandName: string,
     currentPart: string,
     isPartial: boolean
@@ -356,9 +281,6 @@ export class CompletionProvider {
           });
         }
       }
-      
-      // If we already matched a selector and it's not partial, we can return early or keep going
-      // Usually we want to show BOTH selectors and entities
     }
 
     const suggestions = await this.getSuggestionsForParser(parser, node.properties);
@@ -389,15 +311,6 @@ export class CompletionProvider {
     }
 
     return items;
-  }
-
-  private getTokensConsumed(parser: string, properties?: Record<string, any>, remaining?: number): number {
-    if (parser === PARSERS.VEC3 || parser === PARSERS.BLOCK_POS) return 3;
-    if (parser === PARSERS.VEC2 || parser === PARSERS.ROTATION || parser === PARSERS.COLUMN_POS) return 2;
-    if (parser === PARSERS.MESSAGE || (parser === BRIGADIE_PARSERS.STRING && properties?.type === 'greedy')) {
-        return remaining || 1;
-    }
-    return 1;
   }
 
   private getKindForParser(parser: string): CompletionKind {
@@ -460,36 +373,8 @@ export class CompletionProvider {
     }
   }
 
-  private async loadCommandTree(): Promise<Map<string, ParsedCommand>> {
-    if (this.cachedCommands.size > 0) {
-      return this.cachedCommands;
-    }
-    
-    try {
-      const data = await this.fetcher.fetch<CommandNode>('commands/data.json');
-      
-      if (data?.children) {
-        for (const [name, node] of Object.entries(data.children)) {
-          if (node.type === NodeType.Literal) {
-            const description = this.getCommandDescription(name, node);
-            this.cachedCommands.set(name, { name, description, node });
-          }
-        }
-      }
-    } catch {
-      // Return empty map
-    }
-    
-    return this.cachedCommands;
-  }
-
-  private getCommandDescription(name: string, node: CommandNode): string {
-    return COMMAND_DESCRIPTIONS[name] || `/${name} command`;
-  }
-
   async clearCache(): Promise<void> {
-    this.cachedCommands.clear();
     this.cachedRegistries.clear();
-    await this.fetcher.clearCache();
+    await this.commandTree.clearCache();
   }
 }
